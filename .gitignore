@@ -9,3 +9,9 @@ api/__pycache__/
 core/__pycache__/
 core/engine/__pycache__/S
 .venv/
+
+*.log
+*.db
+
+logs/*
+db/*
