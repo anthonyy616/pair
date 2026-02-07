@@ -13,7 +13,7 @@
             "sy_lot": 0.01,
             "sx_lot": 0.02,
             "by_lot": 0.02,
-            "single_buy_lot": 0.01,
+            "single_buy_lot": 0.03,
             "max_profit_usd": 2.0,
             "max_loss_usd": 2.0,
             "max_drawdown_usd": 75.0

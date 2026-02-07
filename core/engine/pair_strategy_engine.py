@@ -192,20 +192,39 @@ class PairStrategyEngine:
         self.state.phase = "AWAITING_SECOND"
         self.activity_log.log_phase_transition("FIRST_FIRE", "AWAITING_SECOND")
         
+        # Calculate initial liquidation prices
+        self._calculate_liquidation_prices()
+        
         await self.save_state()
     
     async def stop(self):
         """
-        Graceful stop - stop monitoring but don't close positions.
-        Sets flag to complete current cycle, then auto-restart.
+        Graceful stop - sets flag to complete current cycle before fully stopping.
+        When graceful_stop is True:
+        - Allow current cycle to continue monitoring
+        - When cycle ends (TP/SL/threshold hit), stop completely (no auto-restart)
         """
+        if not self.running:
+            return
+            
+        print(f"[STOP] {self.symbol}: Graceful stop initiated. Finishing current cycle...")
         self.graceful_stop = True
         self.activity_log.log_graceful_stop(self.state.cycle_count, "manual/timeout")
+        
+        # If we're in IDLE or have no positions, stop immediately
+        open_positions = self._get_open_positions_from_state()
+        if self.state.phase == "IDLE" or not open_positions:
+            self.running = False
+            self.activity_log.log_stop(self.state.cycle_count, "graceful_stop_immediate")
+            await self.save_state()
+            print(f"[STOP] {self.symbol}: No active positions - stopped immediately.")
     
     async def terminate(self):
         """
         Nuclear reset - close ALL positions for this symbol immediately.
+        Resets all pair states. Does NOT restart.
         """
+        print(f"[TERMINATE] {self.symbol}: Closing ALL positions immediately...")
         self.activity_log.log_info("TERMINATE: Closing all positions...")
         
         # Close all positions
@@ -215,15 +234,22 @@ class PairStrategyEngine:
             for pos in positions:
                 if self._close_position(pos.ticket):
                     closed_count += 1
+                else:
+                    print(f"[ERROR] Failed to close position {pos.ticket}")
         
+        print(f"[TERMINATE] {self.symbol}: Closed {closed_count} positions.")
         self.activity_log.log_info(f"TERMINATE: Closed {closed_count} positions")
         
-        # Reset state
+        # Reset state completely
         self._reset_state()
         self.running = False
+        self.graceful_stop = False
         self.state.phase = "IDLE"
+        self.state.cycle_count = 0  # Full reset for nuclear terminate
         
+        print(f"[SHUTDOWN] {self.symbol}: Grid engine stopped.")
         await self.save_state()
+        print(f"[TERMINATE] {self.symbol}: Grid reset complete.")
     
     # ========================
     # TICK HANDLER
@@ -243,18 +269,18 @@ class PairStrategyEngine:
             return
         
         async with self.execution_lock:
-            # Update touch flags FIRST (before checking drops)
+            # 1. Update touch flags FIRST
             self._update_touch_flags(ask, bid)
             
+            # 2. Check position drops (TP/SL) in all active phases
+            await self._check_position_drops(ask, bid)
+            
+            # 3. Check liquidation thresholds in all active phases
+            await self._check_liquidation_prices(ask, bid)
+            
+            # 4. Phase-specific logic
             if self.state.phase == "AWAITING_SECOND":
                 await self._handle_awaiting_second(ask, bid)
-            
-            elif self.state.phase in ("PAIRS_COMPLETE", "MONITORING"):
-                # Check position drops
-                await self._check_position_drops(ask, bid)
-                
-                # Check liquidation prices
-                await self._check_liquidation_prices(ask, bid)
     
     # ========================
     # PHASE HANDLERS
@@ -263,6 +289,7 @@ class PairStrategyEngine:
     async def _handle_awaiting_second(self, ask: float, bid: float):
         """
         Wait for grid distance to be reached, then fire second atomic pair.
+        If graceful_stop is active, skip opening new trades.
         """
         start = self.state.start_price
         
@@ -274,6 +301,20 @@ class PairStrategyEngine:
             return
         
         trigger_price = ask if triggered_up else bid
+        
+        # Check if graceful stop is active - skip opening second pair
+        if self.graceful_stop:
+            self.activity_log.log_info(
+                f"Grid distance reached @ {trigger_price:.2f} → SKIPPING Sx+By (graceful_stop active)"
+            )
+            # Transition directly to monitoring with just Bx+Sy
+            self.state.pairs_complete = True
+            self.state.phase = "PAIRS_COMPLETE"
+            self.activity_log.log_phase_transition("AWAITING_SECOND", "PAIRS_COMPLETE (partial)")
+            self._calculate_liquidation_prices()
+            await self.save_state()
+            return
+        
         self.activity_log.log_second_fire(self.state.cycle_count, trigger_price)
         
         # Second atomic fire: Sx + By
@@ -326,40 +367,45 @@ class PairStrategyEngine:
             tp = exec_price + self.tp_pips
             sl = exec_price - self.sl_pips
             order_type = mt5.ORDER_TYPE_BUY
+            check_price = tick.bid # For stop level validation
         else:
             exec_price = tick.bid
             tp = exec_price - self.tp_pips
             sl = exec_price + self.sl_pips
             order_type = mt5.ORDER_TYPE_SELL
-        
-        # Validate stops against broker minimums
+            check_price = tick.ask # For stop level validation
+
+        # --- TRADE STOPS LEVEL SAFETY (from SymbolEngine) ---
         symbol_info = mt5.symbol_info(self.symbol)
         if symbol_info:
-            min_dist = symbol_info.trade_stops_level
+            point = symbol_info.point
+            stops_level = max(symbol_info.trade_stops_level, 10) # Min 10 pts safety
+            min_dist = stops_level * point
+            
             if direction == "buy":
-                if tp - exec_price < min_dist:
-                    tp = exec_price + min_dist + 1
-                if exec_price - sl < min_dist:
-                    sl = exec_price - min_dist - 1
+                if sl > check_price - min_dist:
+                    sl = check_price - min_dist
+                if tp < check_price + min_dist:
+                    tp = check_price + min_dist
             else:
-                if exec_price - tp < min_dist:
-                    tp = exec_price - min_dist - 1
-                if sl - exec_price < min_dist:
-                    sl = exec_price + min_dist + 1
-        
+                if sl < check_price + min_dist:
+                    sl = check_price + min_dist
+                if tp > check_price - min_dist:
+                    tp = check_price - min_dist
+
         # Build request
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": self.symbol,
-            "volume": lot_size,
+            "volume": float(lot_size),
             "type": order_type,
             "price": exec_price,
-            "sl": sl,
-            "tp": tp,
+            "sl": float(sl),
+            "tp": float(tp),
             "magic": self.MAGIC_NUMBER,
             "comment": f"{leg_name} C{self.state.cycle_count}",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": mt5.ORDER_FILLING_FOK,
             "deviation": 200
         }
         
@@ -432,11 +478,13 @@ class PairStrategyEngine:
             "price": close_price,
             "deviation": 50,
             "magic": self.MAGIC_NUMBER,
-            "comment": "close"
+            "comment": "close",
+            "type_filling": mt5.ORDER_FILLING_FOK
         }
         
         result = mt5.order_send(request)
         return result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
+
     
     # ========================
     # TP/SL DETECTION
@@ -509,11 +557,16 @@ class PairStrategyEngine:
             
             # Fallback: infer from current price distance
             if not is_tp and not is_sl:
-                mid = (ask + bid) / 2
-                tp_dist = abs(mid - tp_price)
-                sl_dist = abs(mid - sl_price)
+                # Use side-aware price for inference
+                check_price = bid if direction == "buy" else ask
+                tp_dist = abs(check_price - tp_price)
+                sl_dist = abs(check_price - sl_price)
                 is_tp = tp_dist < sl_dist
                 is_sl = not is_tp
+                
+                reason = "TP" if is_tp else "SL"
+                print(f"[DROP-INFER] {self.symbol}: Ticket={ticket} {direction.upper()} "
+                      f"-> {reason} (dist_tp={tp_dist:.5f}, dist_sl={sl_dist:.5f})")
             
             # Calculate realized PnL
             close_price = tp_price if is_tp else sl_price
@@ -646,15 +699,15 @@ class PairStrategyEngine:
     
     async def _check_liquidation_prices(self, ask: float, bid: float):
         """
-        Check if current price has hit any liquidation threshold.
+        Check current Unrealized PnL against max profit/loss thresholds.
+        Uses mid-price for threshold evaluation.
         """
         mid = (ask + bid) / 2
-        net_lots = self.state.net_lots
         
-        # Calculate actual current PnL
-        current_pnl = mid * net_lots + self.state.constant + self.state.realized_pnl
+        # Calculate current PnL: realized + unrealized
+        # PnL = P * net_lots + constant + realized_pnl
+        current_pnl = (mid * self.state.net_lots) + self.state.constant + self.state.realized_pnl
         
-        # Check thresholds
         if current_pnl >= self.max_profit_usd:
             self.activity_log.log_threshold_hit("MAX_PROFIT", mid, current_pnl)
             await self._nuclear_reset_and_restart("MAX_PROFIT", current_pnl)
@@ -676,18 +729,25 @@ class PairStrategyEngine:
     
     async def _nuclear_reset_and_restart(self, reason: str, total_pnl: float):
         """
-        Close everything, reset state, restart immediately.
+        Nuclear reset - close all positions, reset state, then:
+        - If graceful_stop is True: stop completely
+        - Otherwise: auto-restart new cycle
         """
         old_cycle = self.state.cycle_count
+        
+        print(f"[RESET] {self.symbol}: Cycle {old_cycle} ended. Reason: {reason}, PnL: ${total_pnl:.2f}")
         
         self.state.phase = "RESETTING"
         self.activity_log.log_phase_transition("*", "RESETTING")
         
-        # Close all remaining positions
+        # Close ALL remaining positions for this symbol
         positions = mt5.positions_get(symbol=self.symbol)
+        closed_count = 0
         if positions:
             for pos in positions:
-                self._close_position(pos.ticket)
+                if self._close_position(pos.ticket):
+                    closed_count += 1
+            print(f"[RESET] {self.symbol}: Closed {closed_count}/{len(positions)} positions")
         
         # Log reset
         self.activity_log.log_reset(old_cycle, old_cycle + 1, reason, total_pnl)
@@ -696,15 +756,18 @@ class PairStrategyEngine:
         self._reset_state()
         self.state.cycle_count = old_cycle + 1
         
-        # If graceful stop, don't restart
+        # Check if graceful stop was requested - if so, stop completely
         if self.graceful_stop:
             self.running = False
+            self.graceful_stop = False
             self.state.phase = "IDLE"
             self.activity_log.log_stop(self.state.cycle_count, "graceful_stop_complete")
             await self.save_state()
+            print(f"[STOP] {self.symbol}: Graceful stop complete. Bot fully stopped.")
             return
         
-        # Auto-restart
+        # Auto-restart new cycle
+        print(f"[RESTART] {self.symbol}: Starting new cycle {self.state.cycle_count}")
         await self.start()
     
     def _reset_state(self):

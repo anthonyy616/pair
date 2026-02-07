@@ -1,7 +1,10 @@
 .env
 .venv/
 __pycache__/
-**/__pycache__/
+**/*__pycache__/**
+*__pycache__/*
+*.py[cod]
+*$py.class
 
 # Database files
 *.db
@@ -11,3 +14,5 @@ db/
 *.log
 logs/
 **/logs/
+
+symbol_engine.py
