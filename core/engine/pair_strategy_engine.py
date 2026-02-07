@@ -418,6 +418,10 @@ class PairStrategyEngine:
                 if tp > check_price - min_dist:
                     tp = check_price - min_dist
 
+        # Snapshot existing tickets BEFORE opening (to find the new one after)
+        positions_before = mt5.positions_get(symbol=self.symbol)
+        existing_tickets = set(pos.ticket for pos in positions_before) if positions_before else set()
+
         # Build request
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
@@ -448,17 +452,25 @@ class PairStrategyEngine:
         # Wait briefly for position to appear
         await asyncio.sleep(0.1)
 
-        # Find actual position
-        positions = mt5.positions_get(symbol=self.symbol)
+        # Find the NEW position by comparing before/after snapshots
+        positions_after = mt5.positions_get(symbol=self.symbol)
         actual_entry = exec_price
         actual_ticket = ticket
 
-        if positions:
-            for pos in positions:
-                if pos.ticket == ticket or pos.magic == self.MAGIC_NUMBER:
+        if positions_after:
+            # First: find the new ticket that didn't exist before
+            for pos in positions_after:
+                if pos.ticket not in existing_tickets:
                     actual_ticket = pos.ticket
                     actual_entry = pos.price_open
                     break
+            else:
+                # Fallback: match by order ticket only (no magic number match)
+                for pos in positions_after:
+                    if pos.ticket == ticket:
+                        actual_ticket = pos.ticket
+                        actual_entry = pos.price_open
+                        break
 
         # Store in ticket_map
         self.ticket_map[actual_ticket] = {
