@@ -837,7 +837,6 @@
             const singleBuyLot = cfg.single_buy_lot || 0.01;
             const maxProfit = cfg.max_profit_usd || 100;
             const maxLoss = cfg.max_loss_usd || 50;
-            const maxDrawdown = cfg.max_drawdown_usd || 75;
 
             return `
             <details class="bg-slate-800/50 rounded border border-slate-700 overflow-hidden" open>
@@ -903,7 +902,7 @@
                     </div>
 
                     <!-- PnL Thresholds -->
-                    <div class="grid grid-cols-3 gap-2 border-t border-slate-700 pt-2 mt-2">
+                    <div class="grid grid-cols-2 gap-2 border-t border-slate-700 pt-2 mt-2">
                         <div>
                             <label class="block text-[10px] text-green-400">Max Profit ($)</label>
                             <input type="number" id="maxprofit_${safeId}" step="1" value="${maxProfit}"
@@ -913,11 +912,6 @@
                             <label class="block text-[10px] text-red-400">Max Loss ($)</label>
                             <input type="number" id="maxloss_${safeId}" step="1" value="${maxLoss}"
                                 class="w-full p-1.5 text-sm rounded bg-slate-900 border border-red-700/50">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] text-orange-400">Max DD ($)</label>
-                            <input type="number" id="maxdd_${safeId}" step="1" value="${maxDrawdown}"
-                                class="w-full p-1.5 text-sm rounded bg-slate-900 border border-orange-700/50">
                         </div>
                     </div>
                 </div>
@@ -998,8 +992,7 @@
                         by_lot: parseFloat(document.getElementById(`bylot_${safeId}`)?.value) || 0.01,
                         single_buy_lot: parseFloat(document.getElementById(`singlelot_${safeId}`)?.value) || 0.01,
                         max_profit_usd: parseFloat(document.getElementById(`maxprofit_${safeId}`)?.value) || 100,
-                        max_loss_usd: parseFloat(document.getElementById(`maxloss_${safeId}`)?.value) || 50,
-                        max_drawdown_usd: parseFloat(document.getElementById(`maxdd_${safeId}`)?.value) || 75
+                        max_loss_usd: parseFloat(document.getElementById(`maxloss_${safeId}`)?.value) || 50
                     };
                 }
             });

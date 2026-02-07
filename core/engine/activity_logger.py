@@ -88,12 +88,11 @@ class ActivityLogger:
     # ========================
     
     def log_liquidation_calc(self, profit_price: float, loss_price: float,
-                             drawdown_price: float, net_lots: float, 
-                             realized_pnl: float):
+                             net_lots: float, realized_pnl: float):
         """Log calculated liquidation prices"""
         self._write(
             f"[LIQUIDATION] profit_price={profit_price:.2f} "
-            f"loss_price={loss_price:.2f} drawdown_price={drawdown_price:.2f} | "
+            f"loss_price={loss_price:.2f} | "
             f"net_lots={net_lots:.4f} realized=${realized_pnl:.2f}"
         )
     

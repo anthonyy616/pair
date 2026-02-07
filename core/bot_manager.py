@@ -2,7 +2,7 @@ import uuid
 from typing import Dict
 from core.config_manager import ConfigManager
 from core.strategy_orchestrator import StrategyOrchestrator
-from core.engine.symbol_engine import SymbolEngine
+from core.engine.pair_strategy_engine import PairStrategyEngine
 
 class BotManager:
     def __init__(self):

@@ -7,7 +7,7 @@ Implements the paired-position trading strategy:
 3. Second atomic fire: Open Sx (sell) + By (buy)
 4. Monitor for TP/SL hits and liquidation thresholds
 5. On first TP: if price < start_price → open Single Buy; else do nothing
-6. On max_profit/max_loss/max_drawdown → nuclear reset + auto-restart
+6. On max_profit/max_loss → nuclear reset + auto-restart
 """
 
 from dataclasses import dataclass, field, asdict
@@ -50,8 +50,6 @@ class StrategyState:
     realized_pnl: float = 0.0
     max_profit_price: float = 0.0
     max_loss_price: float = 0.0
-    max_drawdown_price: float = 0.0
-    peak_pnl: float = 0.0  # For drawdown calculation
     
     # Calculation cache
     net_lots: float = 0.0
@@ -143,10 +141,6 @@ class PairStrategyEngine:
     @property
     def max_loss_usd(self) -> float:
         return float(self.config.get('max_loss_usd', 50.0))
-    
-    @property
-    def max_drawdown_usd(self) -> float:
-        return float(self.config.get('max_drawdown_usd', 75.0))
     
     # ========================
     # LIFECYCLE
@@ -576,8 +570,8 @@ class PairStrategyEngine:
             if ticket:
                 self.state.single_buy_ticket = ticket
                 self.state.single_buy_entry = entry
-                self.activity_log.log_single_buy_opened(
-                    self.state.cycle_count, entry, self.single_buy_lot,
+                self.activity_log.log_fire(
+                    self.state.cycle_count, "SingleBuy", entry, self.single_buy_lot,
                     entry + self.tp_pips, entry - self.sl_pips, ticket
                 )
             
@@ -595,7 +589,7 @@ class PairStrategyEngine:
     
     def _calculate_liquidation_prices(self):
         """
-        Calculate exact prices where max profit/loss/drawdown are hit.
+        Calculate exact prices where max profit/loss are hit.
         """
         # Collect all open positions
         positions = self._get_open_positions_from_state()
@@ -603,7 +597,6 @@ class PairStrategyEngine:
         if not positions:
             self.state.max_profit_price = float('inf')
             self.state.max_loss_price = float('inf')
-            self.state.max_drawdown_price = float('inf')
             return
         
         # Calculate net_lots and constant
@@ -631,7 +624,6 @@ class PairStrategyEngine:
             else:
                 self.state.max_profit_price = float('inf')
                 self.state.max_loss_price = float('inf')
-            self.state.max_drawdown_price = float('inf')
             return
         
         # Solve for prices
@@ -645,15 +637,9 @@ class PairStrategyEngine:
             -self.max_loss_usd - self.state.realized_pnl - constant
         ) / net_lots
         
-        # Drawdown is from peak
-        self.state.max_drawdown_price = (
-            self.state.peak_pnl - self.max_drawdown_usd - self.state.realized_pnl - constant
-        ) / net_lots
-        
         self.activity_log.log_liquidation_calc(
             self.state.max_profit_price,
             self.state.max_loss_price,
-            self.state.max_drawdown_price,
             net_lots,
             self.state.realized_pnl
         )
@@ -668,19 +654,6 @@ class PairStrategyEngine:
         # Calculate actual current PnL
         current_pnl = mid * net_lots + self.state.constant + self.state.realized_pnl
         
-        # Update peak for drawdown tracking
-        if current_pnl > self.state.peak_pnl:
-            self.state.peak_pnl = current_pnl
-            # Recalculate drawdown price when peak changes
-            if abs(net_lots) > 0.0001:
-                self.state.max_drawdown_price = (
-                    self.state.peak_pnl - self.max_drawdown_usd - 
-                    self.state.realized_pnl - self.state.constant
-                ) / net_lots
-        
-        # Calculate drawdown from peak
-        drawdown = self.state.peak_pnl - current_pnl
-        
         # Check thresholds
         if current_pnl >= self.max_profit_usd:
             self.activity_log.log_threshold_hit("MAX_PROFIT", mid, current_pnl)
@@ -690,11 +663,6 @@ class PairStrategyEngine:
         if current_pnl <= -self.max_loss_usd:
             self.activity_log.log_threshold_hit("MAX_LOSS", mid, current_pnl)
             await self._nuclear_reset_and_restart("MAX_LOSS", current_pnl)
-            return
-        
-        if drawdown >= self.max_drawdown_usd:
-            self.activity_log.log_threshold_hit("MAX_DRAWDOWN", mid, current_pnl)
-            await self._nuclear_reset_and_restart("MAX_DRAWDOWN", current_pnl)
             return
         
         # Check if all positions closed (dead state)

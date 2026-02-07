@@ -1,0 +1,141 @@
+[SERVER] Signal Handler Registered
+2026-02-07 18:06:41,183 | INFO | main | ============================================================
+2026-02-07 18:06:41,258 | INFO | main |  TRADING BOT STARTING
+2026-02-07 18:06:41,259 | INFO | main | ============================================================
+2026-02-07 18:06:41,289 | INFO | main | ENTRY POINT: api/server.py
+2026-02-07 18:06:41,289 | INFO | main | ENGINE:      Polling Mode (Active)
+2026-02-07 18:06:41,291 | INFO | main | HOST:        0.0.0.0
+2026-02-07 18:06:41,291 | INFO | main | PORT:        800
+2026-02-07 18:06:41,291 | INFO | main | PID:         19364
+2026-02-07 18:06:41,292 | INFO | main | PYTHON:      C:\Users\antho\Documents\codes-websites\bot-final\.venv\Scripts\python.exe
+2026-02-07 18:06:41,294 | INFO | main | CWD:         C:\Users\antho\Documents\codes-websites\bot-final
+2026-02-07 18:06:41,296 | INFO | main | ============================================================
+[32mINFO[0m:     Started server process [[36m19364[0m]
+[32mINFO[0m:     Waiting for application startup.
+[SERVER] Starting: Launching Monolith Engine...
+2026-02-07 18:06:41,889 | INFO | engine |  Engine: Initializing Direct MT5 Connection (Monolith)...
+2026-02-07 18:06:42,638 | INFO | engine | [OK] MT5 connected successfully
+2026-02-07 18:06:42,677 | INFO | engine |  MT5 Connected. Starting High-Speed Loop.
+2026-02-07 18:06:42,678 | INFO | engine | [TIMEOUT] Session started at 2026-02-07 18:06:42.677053
+[32mINFO[0m:     Application startup complete.
+[32mINFO[0m:     Uvicorn running on [1mhttp://0.0.0.0:800[0m (Press CTRL+C to quit)
+[32mINFO[0m:     127.0.0.1:61688 - "[1mGET / HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:61688 - "[1mGET /env HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:55514 - "[1mGET /favicon.ico HTTP/1.1[0m" [31m404 Not Found[0m
+2026-02-07 18:10:56,078 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[BOT] Restoring/Creating bot session for User: 92b17ba5-59c0-48c2-85fb-d78f9a38655c
+2026-02-07 18:10:56,109 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[SESSION] Logging to: C:\Users\antho\Documents\codes-websites\bot-final\logs\users\92b17ba5-59c0-48c2-85fb-d78f9a38655c\sessions\session_2026-02-07_18-10-56.txt
+[32mINFO[0m:     127.0.0.1:61982 - "[1mGET /config HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:61982 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:61982 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:57057 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56770 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56770 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56770 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56770 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56770 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56770 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60321 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60321 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60321 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60321 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60321 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53825 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53825 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53825 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53825 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53448 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53448 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53448 - "[1mGET /config HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:62506 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:62506 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:62506 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:11:28,100 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:57151 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:61134 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:61134 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:61134 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:52216 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60104 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60104 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60104 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60104 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53777 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:60104 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53777 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53777 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53777 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:54079 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56201 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56201 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56201 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56201 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56201 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:56201 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:12:04,768 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:53422 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:52530 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:52530 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:52530 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:52530 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:52530 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59033 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59033 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59033 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59033 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59033 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59895 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59895 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59895 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59895 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59895 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59895 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59895 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:59895 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     127.0.0.1:63567 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:13:35,630 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:61323 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:14:35,841 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:59123 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:15:35,706 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:63161 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:16:35,513 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:50107 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:17:35,009 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:64948 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:18:35,333 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:62400 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:19:35,460 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:54260 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:20:35,289 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:52346 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:21:35,349 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:60812 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+2026-02-07 18:22:35,344 | INFO | httpx | HTTP Request: GET https://vzwzlldrnpuhijtxcoyk.supabase.co/auth/v1/user "HTTP/2 200 OK"
+[32mINFO[0m:     127.0.0.1:53864 - "[1mGET /status HTTP/1.1[0m" [32m200 OK[0m
+[32mINFO[0m:     Shutting down
+[32mINFO[0m:     Waiting for application shutdown.
+[32mINFO[0m:     Application shutdown complete.
+[32mINFO[0m:     Finished server process [[36m19364[0m]
+2026-02-07 18:23:32,713 | INFO | main | Received signal 2. Initiating graceful shutdown...
+2026-02-07 18:23:32,752 | INFO | main |  Bot stopped.

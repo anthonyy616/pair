@@ -67,12 +67,10 @@ class SymbolConfig(BaseModel):
     single_buy_lot: Optional[float] = None  # Recovery Buy lot
     max_profit_usd: Optional[float] = None  # Max profit threshold
     max_loss_usd: Optional[float] = None    # Max loss threshold
-    max_drawdown_usd: Optional[float] = None  # Max drawdown threshold
 
 class GlobalConfig(BaseModel):
     """Global settings"""
     max_runtime_minutes: Optional[int] = None
-    max_drawdown_usd: Optional[float] = None
 
 class ConfigUpdate(BaseModel):
     """Multi-asset config update payload"""

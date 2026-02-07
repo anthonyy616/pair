@@ -25,7 +25,7 @@ def get_default_symbol_config() -> Dict[str, Any]:
     - grid_distance: Pips between first and second atomic fire
     - tp_pips/sl_pips: Take profit and stop loss distances
     - Named lot sizes for each position type
-    - max_profit_usd/max_loss_usd/max_drawdown_usd: PnL thresholds
+    - max_profit_usd/max_loss_usd: PnL thresholds for reset
     """
     return {
         "enabled": False,
@@ -39,7 +39,6 @@ def get_default_symbol_config() -> Dict[str, Any]:
         "single_buy_lot": 0.01,      # Recovery Buy lot
         "max_profit_usd": 100.0,     # Max profit threshold ($)
         "max_loss_usd": 50.0,        # Max loss threshold ($)
-        "max_drawdown_usd": 75.0,    # Max drawdown threshold ($) - nuclear reset
     }
 
 
@@ -50,8 +49,7 @@ class ConfigManager:
     Structure:
     {
         "global": {
-            "max_runtime_minutes": 0,
-            "max_drawdown_usd": 50.0
+            "max_runtime_minutes": 0
         },
         "symbols": {
             "FX Vol 20": { ...symbol config... },
@@ -107,8 +105,6 @@ class ConfigManager:
         # Migrate global settings
         if "max_runtime_minutes" in old_config:
             new_config["global"]["max_runtime_minutes"] = old_config["max_runtime_minutes"]
-        if "max_drawdown_usd" in old_config:
-            new_config["global"]["max_drawdown_usd"] = old_config["max_drawdown_usd"]
         
         # Migrate old symbols to new format
         old_symbols = old_config.get("symbols", ["FX Vol 20"])
@@ -169,7 +165,7 @@ class ConfigManager:
                         self.config["symbols"][symbol][lot_field] = max(0.01, float(lot_val))
                     
                     # Validate USD thresholds: must be > 0
-                    for usd_field in ["max_profit_usd", "max_loss_usd", "max_drawdown_usd"]:
+                    for usd_field in ["max_profit_usd", "max_loss_usd"]:
                         usd_val = self.config["symbols"][symbol].get(usd_field, 50.0)
                         self.config["symbols"][symbol][usd_field] = max(1.0, float(usd_val))
         
@@ -205,8 +201,7 @@ class ConfigManager:
         """Generate default multi-asset config structure"""
         return {
             "global": {
-                "max_runtime_minutes": 0,
-                "max_drawdown_usd": 50.0
+                "max_runtime_minutes": 0
             },
             "symbols": {
                 symbol: get_default_symbol_config()
