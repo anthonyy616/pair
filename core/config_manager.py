@@ -21,11 +21,11 @@ AVAILABLE_SYMBOLS = [
 def get_default_symbol_config() -> Dict[str, Any]:
     """
     Default configuration for a single symbol/asset (Pair Strategy)
-    
+
     - grid_distance: Pips between first and second atomic fire
     - tp_pips/sl_pips: Take profit and stop loss distances
     - Named lot sizes for each position type
-    - max_profit_usd/max_loss_usd: PnL thresholds for reset
+    - single_fire_*: User-configured single fire order (direction, lot, tp, sl)
     """
     return {
         "enabled": False,
@@ -36,9 +36,13 @@ def get_default_symbol_config() -> Dict[str, Any]:
         "sy_lot": 0.01,              # Initial Sell lot (Pair Y)
         "sx_lot": 0.01,              # Completing Sell lot (Pair X)
         "by_lot": 0.01,              # Completing Buy lot (Pair Y)
-        "single_buy_lot": 0.01,      # Recovery Buy lot
-        "max_profit_usd": 100.0,     # Max profit threshold ($)
-        "max_loss_usd": 50.0,        # Max loss threshold ($)
+        "single_fire_direction": "sell",  # Single fire direction (buy or sell)
+        "single_fire_lot": 0.01,         # Single fire lot size
+        "single_fire_tp_pips": 150.0,    # Single fire TP distance
+        "single_fire_sl_pips": 200.0,    # Single fire SL distance
+        # # Max profit/loss thresholds (commented out - may be re-implemented later)
+        # "max_profit_usd": 100.0,     # Max profit threshold ($)
+        # "max_loss_usd": 50.0,        # Max loss threshold ($)
     }
 
 
@@ -160,14 +164,24 @@ class ConfigManager:
                     self.config["symbols"][symbol]["sl_pips"] = max(1.0, float(sl))
                     
                     # Validate lot sizes: all must be > 0, default to 0.01
-                    for lot_field in ["bx_lot", "sy_lot", "sx_lot", "by_lot", "single_buy_lot"]:
+                    for lot_field in ["bx_lot", "sy_lot", "sx_lot", "by_lot", "single_fire_lot"]:
                         lot_val = self.config["symbols"][symbol].get(lot_field, 0.01)
                         self.config["symbols"][symbol][lot_field] = max(0.01, float(lot_val))
-                    
-                    # Validate USD thresholds: must be > 0
-                    for usd_field in ["max_profit_usd", "max_loss_usd"]:
-                        usd_val = self.config["symbols"][symbol].get(usd_field, 50.0)
-                        self.config["symbols"][symbol][usd_field] = max(1.0, float(usd_val))
+
+                    # Validate single fire direction: must be "buy" or "sell"
+                    sf_dir = self.config["symbols"][symbol].get("single_fire_direction", "sell")
+                    if sf_dir not in ("buy", "sell"):
+                        self.config["symbols"][symbol]["single_fire_direction"] = "sell"
+
+                    # Validate single fire TP/SL pips: must be > 0
+                    for sf_field in ["single_fire_tp_pips", "single_fire_sl_pips"]:
+                        sf_val = self.config["symbols"][symbol].get(sf_field, 150.0)
+                        self.config["symbols"][symbol][sf_field] = max(1.0, float(sf_val))
+
+                    # # Validate USD thresholds (commented out - may be re-implemented later)
+                    # for usd_field in ["max_profit_usd", "max_loss_usd"]:
+                    #     usd_val = self.config["symbols"][symbol].get(usd_field, 50.0)
+                    #     self.config["symbols"][symbol][usd_field] = max(1.0, float(usd_val))
         
         self.save_config()
         return self.config

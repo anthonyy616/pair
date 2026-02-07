@@ -57,16 +57,20 @@ async def startup_event():
 class SymbolConfig(BaseModel):
     """Config for a single symbol (Pair Strategy)"""
     enabled: Optional[bool] = None
-    grid_distance: Optional[float] = None   # Pips between atomic fires
-    tp_pips: Optional[float] = None         # Take profit distance
-    sl_pips: Optional[float] = None         # Stop loss distance
-    bx_lot: Optional[float] = None          # Initial Buy lot
-    sy_lot: Optional[float] = None          # Initial Sell lot
-    sx_lot: Optional[float] = None          # Completing Sell lot
-    by_lot: Optional[float] = None          # Completing Buy lot
-    single_buy_lot: Optional[float] = None  # Recovery Buy lot
-    max_profit_usd: Optional[float] = None  # Max profit threshold
-    max_loss_usd: Optional[float] = None    # Max loss threshold
+    grid_distance: Optional[float] = None        # Pips between atomic fires
+    tp_pips: Optional[float] = None              # Take profit distance
+    sl_pips: Optional[float] = None              # Stop loss distance
+    bx_lot: Optional[float] = None               # Initial Buy lot
+    sy_lot: Optional[float] = None               # Initial Sell lot
+    sx_lot: Optional[float] = None               # Completing Sell lot
+    by_lot: Optional[float] = None               # Completing Buy lot
+    single_fire_direction: Optional[str] = None  # Single fire direction (buy/sell)
+    single_fire_lot: Optional[float] = None      # Single fire lot size
+    single_fire_tp_pips: Optional[float] = None  # Single fire TP distance
+    single_fire_sl_pips: Optional[float] = None  # Single fire SL distance
+    # # Max profit/loss thresholds (commented out - may be re-implemented later)
+    # max_profit_usd: Optional[float] = None  # Max profit threshold
+    # max_loss_usd: Optional[float] = None    # Max loss threshold
 
 class GlobalConfig(BaseModel):
     """Global settings"""

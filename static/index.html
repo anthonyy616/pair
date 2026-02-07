@@ -834,9 +834,10 @@
             const syLot = cfg.sy_lot || 0.01;
             const sxLot = cfg.sx_lot || 0.01;
             const byLot = cfg.by_lot || 0.01;
-            const singleBuyLot = cfg.single_buy_lot || 0.01;
-            const maxProfit = cfg.max_profit_usd || 100;
-            const maxLoss = cfg.max_loss_usd || 50;
+            const sfDirection = cfg.single_fire_direction || 'sell';
+            const sfLot = cfg.single_fire_lot || 0.01;
+            const sfTpPips = cfg.single_fire_tp_pips || 150;
+            const sfSlPips = cfg.single_fire_sl_pips || 200;
 
             return `
             <details class="bg-slate-800/50 rounded border border-slate-700 overflow-hidden" open>
@@ -869,10 +870,10 @@
                         </div>
                     </div>
                     
-                    <!-- Named Lot Sizes -->
+                    <!-- Grid Lot Sizes -->
                     <div>
-                        <label class="block text-[10px] text-yellow-400 mb-1">Position Lot Sizes</label>
-                        <div class="grid grid-cols-5 gap-1">
+                        <label class="block text-[10px] text-yellow-400 mb-1">Grid Lot Sizes</label>
+                        <div class="grid grid-cols-4 gap-1">
                             <div>
                                 <label class="block text-[9px] text-blue-400">Bx</label>
                                 <input type="number" id="bxlot_${safeId}" step="0.01" value="${bxLot}"
@@ -893,25 +894,36 @@
                                 <input type="number" id="bylot_${safeId}" step="0.01" value="${byLot}"
                                     class="w-full p-1 text-xs rounded bg-slate-900 border border-blue-700/50 text-center">
                             </div>
-                            <div>
-                                <label class="block text-[9px] text-purple-400">Single</label>
-                                <input type="number" id="singlelot_${safeId}" step="0.01" value="${singleBuyLot}"
-                                    class="w-full p-1 text-xs rounded bg-slate-900 border border-purple-700/50 text-center">
-                            </div>
                         </div>
                     </div>
 
-                    <!-- PnL Thresholds -->
-                    <div class="grid grid-cols-2 gap-2 border-t border-slate-700 pt-2 mt-2">
-                        <div>
-                            <label class="block text-[10px] text-green-400">Max Profit ($)</label>
-                            <input type="number" id="maxprofit_${safeId}" step="1" value="${maxProfit}"
-                                class="w-full p-1.5 text-sm rounded bg-slate-900 border border-green-700/50">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] text-red-400">Max Loss ($)</label>
-                            <input type="number" id="maxloss_${safeId}" step="1" value="${maxLoss}"
-                                class="w-full p-1.5 text-sm rounded bg-slate-900 border border-red-700/50">
+                    <!-- Single Fire Config -->
+                    <div class="border-t border-slate-700 pt-2 mt-2">
+                        <label class="block text-[10px] text-purple-400 mb-1">Single Fire</label>
+                        <div class="grid grid-cols-4 gap-1">
+                            <div>
+                                <label class="block text-[9px] text-purple-400">Direction</label>
+                                <select id="sfdir_${safeId}"
+                                    class="w-full p-1 text-xs rounded bg-slate-900 border border-purple-700/50 text-center">
+                                    <option value="sell" ${sfDirection === 'sell' ? 'selected' : ''}>Sell</option>
+                                    <option value="buy" ${sfDirection === 'buy' ? 'selected' : ''}>Buy</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] text-purple-400">Lot</label>
+                                <input type="number" id="sflot_${safeId}" step="0.01" value="${sfLot}"
+                                    class="w-full p-1 text-xs rounded bg-slate-900 border border-purple-700/50 text-center">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] text-green-400">SF TP</label>
+                                <input type="number" id="sftp_${safeId}" step="1" value="${sfTpPips}"
+                                    class="w-full p-1 text-xs rounded bg-slate-900 border border-green-700/50 text-center">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] text-red-400">SF SL</label>
+                                <input type="number" id="sfsl_${safeId}" step="1" value="${sfSlPips}"
+                                    class="w-full p-1 text-xs rounded bg-slate-900 border border-red-700/50 text-center">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -990,9 +1002,10 @@
                         sy_lot: parseFloat(document.getElementById(`sylot_${safeId}`)?.value) || 0.01,
                         sx_lot: parseFloat(document.getElementById(`sxlot_${safeId}`)?.value) || 0.01,
                         by_lot: parseFloat(document.getElementById(`bylot_${safeId}`)?.value) || 0.01,
-                        single_buy_lot: parseFloat(document.getElementById(`singlelot_${safeId}`)?.value) || 0.01,
-                        max_profit_usd: parseFloat(document.getElementById(`maxprofit_${safeId}`)?.value) || 100,
-                        max_loss_usd: parseFloat(document.getElementById(`maxloss_${safeId}`)?.value) || 50
+                        single_fire_direction: document.getElementById(`sfdir_${safeId}`)?.value || 'sell',
+                        single_fire_lot: parseFloat(document.getElementById(`sflot_${safeId}`)?.value) || 0.01,
+                        single_fire_tp_pips: parseFloat(document.getElementById(`sftp_${safeId}`)?.value) || 150,
+                        single_fire_sl_pips: parseFloat(document.getElementById(`sfsl_${safeId}`)?.value) || 200
                     };
                 }
             });
