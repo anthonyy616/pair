@@ -486,13 +486,17 @@ class PairStrategyEngine:
 
         pos = positions[0]
 
+        tick = mt5.symbol_info_tick(self.symbol)
+        if not tick:
+            return False
+
         # Determine close parameters
         if pos.type == mt5.ORDER_TYPE_BUY:
             close_type = mt5.ORDER_TYPE_SELL
-            close_price = mt5.symbol_info_tick(self.symbol).bid
+            close_price = tick.bid
         else:
             close_type = mt5.ORDER_TYPE_BUY
-            close_price = mt5.symbol_info_tick(self.symbol).ask
+            close_price = tick.ask
 
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
@@ -874,6 +878,8 @@ class PairStrategyEngine:
             return
 
         # Auto-restart new cycle
+        # Must set running=False so start() doesn't exit early on the self.running check
+        self.running = False
         print(f"[RESTART] {self.symbol}: Starting new cycle {self.state.cycle_count}")
         await self.start()
 
