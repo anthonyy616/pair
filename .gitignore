@@ -1,17 +1,13 @@
 .env
-
-logs/
-
-__pycache__/
-
-*.db
-api/__pycache__/
-core/__pycache__/
-core/engine/__pycache__/S
 .venv/
+__pycache__/
+**/__pycache__/
 
-*.log
+# Database files
 *.db
+db/
 
-logs/*
-db/*
+# Logs
+*.log
+logs/
+**/logs/

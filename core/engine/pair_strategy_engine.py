@@ -772,6 +772,18 @@ class PairStrategyEngine:
     # STATUS (for API)
     # ========================
     
+    @property
+    def current_price(self) -> float:
+        """Get current price for the symbol"""
+        tick = mt5.symbol_info_tick(self.symbol)
+        if tick:
+            return (tick.ask + tick.bid) / 2
+        return 0.0
+    
+    async def start_ticker(self):
+        """Called when config updates. Re-sync strategy."""
+        pass  # No special handling needed for pair strategy
+    
     def get_status(self) -> dict:
         """Return status dict for API polling."""
         open_count = len(self._get_open_positions_from_state())
@@ -787,8 +799,10 @@ class PairStrategyEngine:
             "realized_pnl": self.state.realized_pnl,
             "max_profit_price": self.state.max_profit_price,
             "max_loss_price": self.state.max_loss_price,
-            "max_drawdown_price": self.state.max_drawdown_price,
             "graceful_stop": self.graceful_stop,
+            "is_resetting": self.state.phase == "RESETTING",
+            "step": self.state.cycle_count,
+            "iteration": self.state.cycle_count,
             "positions": {
                 "bx": {"ticket": self.state.bx_ticket, "entry": self.state.bx_entry},
                 "sy": {"ticket": self.state.sy_ticket, "entry": self.state.sy_entry},
@@ -797,3 +811,4 @@ class PairStrategyEngine:
                 "single_buy": {"ticket": self.state.single_buy_ticket, "entry": self.state.single_buy_entry}
             }
         }
+
