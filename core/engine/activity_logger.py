@@ -88,22 +88,16 @@ class ActivityLogger:
                  tp: float, sl: float, ticket: int = 0):
         """Log a position opening (atomic fire)"""
         friendly = self._friendly_leg(leg_name)
-        direction = "BUY" if leg_name in ("Bx", "By", "SingleFire") else "SELL"
-        if leg_name == "SingleFire":
-            # Direction is set by caller via log_info before this
-            direction = "BUY" if tp > price else "SELL"
-
+        
         self._write(
-            f"Opened {friendly} ({direction}) at price {price:.2f}  |  "
-            f"Lot size: {lot:.2f}  |  Take Profit: {tp:.2f}  |  Stop Loss: {sl:.2f}"
+            f"Opened {friendly} @ {price:.5f}  |  Lot: {lot:.2f}"
         )
 
     def log_second_fire(self, cycle: int, price: float):
         """Log the second atomic fire (grid distance reached)"""
         self._write_separator()
         self._write(
-            f"Price moved to {price:.2f} — grid distance reached. "
-            f"Opening 2nd pair of trades (2nd Sell + 2nd Buy)..."
+            f"Price moved to {price:.5f} — grid distance reached. Opening 2nd pair..."
         )
 
     # ========================
@@ -116,7 +110,7 @@ class ActivityLogger:
         friendly = self._friendly_leg(leg)
         result = "profit" if realized_pnl >= 0 else "loss"
         self._write(
-            f"{friendly} hit Take Profit at {tp_price:.2f}  |  "
+            f"{friendly} hit TP @ {tp_price:.5f}  |  "
             f"Result: ${realized_pnl:+.2f} ({result})"
         )
 
@@ -125,7 +119,7 @@ class ActivityLogger:
         """Log a stop loss hit"""
         friendly = self._friendly_leg(leg)
         self._write(
-            f"{friendly} hit Stop Loss at {sl_price:.2f}  |  "
+            f"{friendly} hit SL @ {sl_price:.5f}  |  "
             f"Result: ${realized_pnl:+.2f} (loss)"
         )
 
@@ -133,8 +127,7 @@ class ActivityLogger:
                                tp: float, sl: float, ticket: int = 0):
         """Log recovery single buy opening (legacy — kept for compatibility)"""
         self._write(
-            f"Opened Recovery BUY at {price:.2f}  |  "
-            f"Lot size: {lot:.2f}  |  Take Profit: {tp:.2f}  |  Stop Loss: {sl:.2f}"
+            f"Opened Recovery BUY @ {price:.5f}  |  Lot: {lot:.2f}"
         )
 
     # ========================
