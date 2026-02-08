@@ -1,6 +1,6 @@
 {
     "global": {
-        "max_runtime_minutes": 60,
+        "max_runtime_minutes": 420,
         "max_drawdown_usd": 50.0
     },
     "symbols": {
@@ -17,10 +17,10 @@
             "max_profit_usd": 2.0,
             "max_loss_usd": 2.0,
             "max_drawdown_usd": 75.0,
-            "single_fire_direction": "sell",
-            "single_fire_lot": 0.09,
-            "single_fire_tp_pips": 240.0,
-            "single_fire_sl_pips": 270.0
+            "single_fire_direction": "buy",
+            "single_fire_lot": 0.03,
+            "single_fire_tp_pips": 30.0,
+            "single_fire_sl_pips": 60.0
         },
         "FX Vol 40": {
             "enabled": false,

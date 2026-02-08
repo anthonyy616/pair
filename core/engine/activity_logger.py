@@ -17,16 +17,25 @@ class ActivityLogger:
     Log files stored in: logs/activity/{user_id}/{symbol}_{date}.log
     """
     
-    def __init__(self, symbol: str, user_id: str = "default"):
+    def __init__(self, symbol: str, user_id: str = "default", session_logger=None):
         self.symbol = symbol
         self.user_id = user_id
-        self.log_dir = f"logs/activity/{user_id}"
+        self.session_logger = session_logger
+        
+        # [FIX] Use absolute path relative to project root to avoid CWD issues
+        # core/engine/activity_logger.py -> core/engine -> core -> root -> logs
+        from pathlib import Path
+        root_dir = Path(__file__).resolve().parent.parent.parent
+        self.log_dir = root_dir / "logs" / "users" / user_id / "sessions"
+        
+        # Ensure directory exists
         os.makedirs(self.log_dir, exist_ok=True)
         
         # Generate filename with date
         date_str = datetime.now().strftime("%Y-%m-%d")
         safe_symbol = symbol.replace(" ", "_")
-        self.log_file = os.path.join(self.log_dir, f"{safe_symbol}_{date_str}.log")
+        # Prefix with 'activity_' so we can distinguish from session logs
+        self.log_file = self.log_dir / f"activity_{safe_symbol}_{date_str}.log"
     
     def _write(self, entry: str):
         """Write timestamped entry to log file"""
@@ -38,6 +47,12 @@ class ActivityLogger:
         
         # Also print to console
         print(f"[{self.symbol}] {entry}")
+        
+        # [NEW] Also write to session log if available
+        if self.session_logger:
+            # We use 'log' because it adds its own timestamp
+            # Prepend symbol name for context in the merged log
+            self.session_logger.log(f"[{self.symbol}] {entry}")
     
     # ========================
     # FIRE EVENTS

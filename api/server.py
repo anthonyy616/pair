@@ -273,7 +273,8 @@ async def get_group_logs(bot = Depends(get_current_bot)):
         # TASK 3 FIX: Include both .log and .txt file types
         log_files = itertools.chain(
             log_dir.glob("groups_log_*.txt"),  # Table snapshots
-            log_dir.glob("groups_*.log")       # Event logs
+            log_dir.glob("groups_*.log"),      # Event logs (Group Strategy)
+            log_dir.glob("activity_*.log")     # Activity logs (Pair Strategy)
         )
         for file in sorted(log_files, key=lambda f: f.stat().st_mtime, reverse=True):
             logs.append({

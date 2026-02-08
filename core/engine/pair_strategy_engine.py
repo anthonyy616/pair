@@ -75,10 +75,11 @@ class PairStrategyEngine:
 
     MAGIC_NUMBER = 123456
 
-    def __init__(self, config_manager, symbol: str, user_id: str = "default"):
+    def __init__(self, config_manager, symbol: str, user_id: str = "default", session_logger=None):
         self.config_manager = config_manager
         self.symbol = symbol
         self.user_id = user_id
+        self.session_logger = session_logger
 
         # State
         self.state = StrategyState()
@@ -92,8 +93,8 @@ class PairStrategyEngine:
         # Execution lock
         self.execution_lock = asyncio.Lock()
 
-        # Activity logger
-        self.activity_log = ActivityLogger(symbol, user_id)
+        # Activity logger (now wired to session logger too)
+        self.activity_log = ActivityLogger(symbol, user_id, session_logger=session_logger)
 
         # Persistence
         self.db_path = f"db/pair_strategy_{user_id}.db"

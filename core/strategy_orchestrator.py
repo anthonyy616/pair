@@ -51,7 +51,7 @@ class StrategyOrchestrator:
             sym_config = self.config_manager.get_symbol_config(sym)
             if sym_config:
                 print(f"[ORCHESTRATOR] Spawning Strategy: {sym}")
-                strategy = GridStrategy(self.config_manager, sym, self.user_id)
+                strategy = GridStrategy(self.config_manager, sym, self.user_id, session_logger=self.session_logger)
                 self.strategies[sym] = strategy
 
         self.active_symbols = enabled_symbols
@@ -77,7 +77,7 @@ class StrategyOrchestrator:
             sym_config = self.config_manager.get_symbol_config(symbol)
             if sym_config and sym_config.get('enabled', False):
                 print(f"[ORCHESTRATOR] Spawning Strategy: {symbol}")
-                strategy = GridStrategy(self.config_manager, symbol, self.user_id)
+                strategy = GridStrategy(self.config_manager, symbol, self.user_id, session_logger=self.session_logger)
                 self.strategies[symbol] = strategy
                 self.active_symbols.add(symbol)
         
