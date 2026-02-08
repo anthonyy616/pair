@@ -135,12 +135,24 @@ class TradingEngine:
         """
         Start the trading engine with MT5 connection.
         """
+        if self.running and self.start_time:
+            logger.warning("Engine start called but already running.")
+            return
+
         logger.info(" Engine: Initializing Direct MT5 Connection (Monolith)...")
+        
+        # Cancel any pending DB cleanup if we are restarting
+        if self.db_cleanup_task and not self.db_cleanup_task.done():
+            self.db_cleanup_task.cancel()
+            logger.info("Cancelled pending DB cleanup due to restart.")
+            self.db_cleanup_task = None
         
         if not self._init_mt5():
             logger.critical("Failed to initialize MT5. Engine not starting.")
             raise RuntimeError("MT5 initialization failed")
         
+        # [FIX] Explicitly set running to True to allow restart after stop()
+        self.running = True
         logger.info(" MT5 Connected. Starting High-Speed Loop.")
         await self.run_tick_loop()
 
@@ -148,101 +160,113 @@ class TradingEngine:
         """
         Main tick processing loop with health monitoring.
         """
-        # Track start time for timeout calculation
+        # [FIX] Reset flags for new session
         self.start_time = datetime.now()
+        self.timeout_graceful_stop_triggered = False
+        self.force_stop_time = None
+        
         logger.info(f"[TIMEOUT] Session started at {self.start_time}")
         
-        while self.running:
-            try:
-                # 1. Collect all orchestrators FIRST (needed for timeout check and tick processing)
-                all_orchestrators = list(self.bot_manager.bots.values())
-                
-                # Periodic health check
-                self.tick_count += 1
-                if self.tick_count % self.HEALTH_CHECK_INTERVAL == 0:
-                    if not self._check_mt5_health():
-                        if not await self._reconnect_mt5():
-                            # Failed to reconnect - exit to trigger watchdog restart
-                            logger.critical("MT5 reconnection failed. Exiting for watchdog restart.")
-                            raise RuntimeError("MT5 connection lost and could not reconnect")
-                
-                # CHECK TIMEOUT: Trigger graceful stop if max_runtime_minutes elapsed
-                if not self.timeout_graceful_stop_triggered:
-                    await self._check_timeout_graceful_stop()
-                
-                # CHECK COMPLETION: If timeout triggered, see if all bots have finished
-                if self.timeout_graceful_stop_triggered:
-                    total_running = 0
+        try:
+            while self.running:
+                try:
+                    # 1. Collect all orchestrators FIRST (needed for timeout check and tick processing)
+                    all_orchestrators = list(self.bot_manager.bots.values())
+                    
+                    # Periodic health check
+                    self.tick_count += 1
+                    if self.tick_count % self.HEALTH_CHECK_INTERVAL == 0:
+                        if not self._check_mt5_health():
+                            if not await self._reconnect_mt5():
+                                # Failed to reconnect - exit to trigger watchdog restart
+                                logger.critical("MT5 reconnection failed. Exiting for watchdog restart.")
+                                raise RuntimeError("MT5 connection lost and could not reconnect")
+                    
+                    # CHECK TIMEOUT: Trigger graceful stop if max_runtime_minutes elapsed
+                    if not self.timeout_graceful_stop_triggered:
+                        await self._check_timeout_graceful_stop()
+                    
+                    # CHECK COMPLETION: If timeout triggered, see if all bots have finished
+                    if self.timeout_graceful_stop_triggered:
+                        total_running = 0
+                        for orch in all_orchestrators:
+                            total_running += sum(1 for s in orch.strategies.values() if s.running)
+                        
+                        if total_running == 0:
+                            logger.warning("[TIMEOUT] All symbols finished graceful stop. Shutting down engine.")
+                            print(f"\n[TIMEOUT] All symbols finished. Engine stopping.")
+                            # Schedule DB cleanup in 5 minutes
+                            if self.db_cleanup_task is None:
+                                self.db_cleanup_task = asyncio.create_task(self._schedule_db_cleanup())
+                            await self.stop()
+                            break
+                    
+                    # 2. Collect active symbols from all orchestrators
+                    active_symbols = set()
+                    
                     for orch in all_orchestrators:
-                        total_running += sum(1 for s in orch.strategies.values() if s.running)
+                        active_symbols.update(orch.get_active_symbols())
                     
-                    if total_running == 0:
-                        logger.warning("[TIMEOUT] All symbols finished graceful stop. Shutting down engine.")
-                        print(f"\n[TIMEOUT] All symbols finished. Engine stopping.")
-                        # Schedule DB cleanup in 5 minutes
-                        if self.db_cleanup_task is None:
-                            self.db_cleanup_task = asyncio.create_task(self._schedule_db_cleanup())
-                        await self.stop()
-                        break
-                
-                # 2. Collect active symbols from all orchestrators
-                active_symbols = set()
-                
-                for orch in all_orchestrators:
-                    active_symbols.update(orch.get_active_symbols())
-                
-                # 2. Iterate and Fetch
-                if not active_symbols:
-                    # Fallback to prevent tight loop if no bots
-                    await asyncio.sleep(0.1)  # Small sleep when idle
-                    continue
-
-                for symbol in active_symbols:
-                    # Ensure Symbol Selected (MT5 requirement)
-                    if not mt5.symbol_select(symbol, True):
+                    # 2. Iterate and Fetch
+                    if not active_symbols:
+                        # Fallback to prevent tight loop if no bots
+                        await asyncio.sleep(0.1)  # Small sleep when idle
                         continue
+
+                    for symbol in active_symbols:
+                        # Ensure Symbol Selected (MT5 requirement)
+                        if not mt5.symbol_select(symbol, True):
+                            continue
+                        
+                        # Direct API Call - Zero Network Latency
+                        tick = mt5.symbol_info_tick(symbol)
+                        
+                        if tick:
+                            # Track stats
+                            self.stats["ticks_processed"] += 1
+                            self.stats["last_tick_time"] = datetime.now()
+                            
+                            # Get positions
+                            positions = mt5.positions_get(symbol=symbol)
+                            pos_count = len(positions) if positions else 0
+                            
+                            tick_data = {
+                                'ask': tick.ask, 
+                                'bid': tick.bid,
+                                'positions_count': pos_count
+                            }
+                            
+                            # Broadcast to all Orchestrators
+                            tasks = [orch.on_external_tick(symbol, tick_data) for orch in all_orchestrators]
+                            await asyncio.gather(*tasks)
                     
-                    # Direct API Call - Zero Network Latency
-                    tick = mt5.symbol_info_tick(symbol)
-                    
-                    if tick:
-                        # Track stats
-                        self.stats["ticks_processed"] += 1
-                        self.stats["last_tick_time"] = datetime.now()
-                        
-                        # Get positions
-                        positions = mt5.positions_get(symbol=symbol)
-                        pos_count = len(positions) if positions else 0
-                        
-                        tick_data = {
-                            'ask': tick.ask, 
-                            'bid': tick.bid,
-                            'positions_count': pos_count
-                        }
-                        
-                        # Broadcast to all Orchestrators
-                        tasks = [orch.on_external_tick(symbol, tick_data) for orch in all_orchestrators]
-                        await asyncio.gather(*tasks)
-                
-                # Reset consecutive error counter on success
-                self.consecutive_errors = 0
-                        
-            except Exception as e:
-                self.consecutive_errors += 1
-                self.stats["errors"] += 1
-                logger.error(f"Engine tick error (#{self.consecutive_errors}): {e}")
-                
-                # If too many consecutive errors, try reconnecting
-                if self.consecutive_errors >= 5:
-                    logger.warning("Too many consecutive errors. Attempting MT5 reconnect...")
-                    if not await self._reconnect_mt5():
-                        raise RuntimeError("MT5 connection lost after consecutive errors")
+                    # Reset consecutive error counter on success
                     self.consecutive_errors = 0
+                            
+                except Exception as e:
+                    self.consecutive_errors += 1
+                    self.stats["errors"] += 1
+                    logger.error(f"Engine tick error (#{self.consecutive_errors}): {e}")
+                    
+                    # If too many consecutive errors, try reconnecting
+                    if self.consecutive_errors >= 5:
+                        logger.warning("Too many consecutive errors. Attempting MT5 reconnect...")
+                        if not await self._reconnect_mt5():
+                            raise RuntimeError("MT5 connection lost after consecutive errors")
+                        self.consecutive_errors = 0
+                    
+                    await asyncio.sleep(1)  # Backoff on error
+                    
+                    
+                # Minimal sleep for max performance but allow other async tasks
+                await asyncio.sleep(0)
                 
-                await asyncio.sleep(1)  # Backoff on error
-                
-            # Minimal sleep for max performance but allow other async tasks
-            await asyncio.sleep(0)
+        except Exception as e:
+            logger.critical(f"Engine Loop Crashed: {e}")
+        finally:
+            logger.info("Engine Loop Exited.")
+            self.running = False
+            self.start_time = None
 
     async def stop(self):
         """

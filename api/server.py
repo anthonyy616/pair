@@ -186,6 +186,17 @@ async def start_all(bot = Depends(get_current_bot)):
                 "error": f"DB file locked ({e}). Please terminate all or restart bot."
             }
     
+    # [FIX] Auto-Restart Trading Engine if stopped
+    if not trading_engine.running:
+        print("[SERVER] Restarting Trading Engine...")
+        asyncio.create_task(trading_engine.start())
+        
+        # Wait for engine to initialize (up to 5s)
+        for _ in range(10):
+            if trading_engine.running:
+                break
+            await asyncio.sleep(0.5)
+        
     await bot.start()
     return {"status": "started", "symbols": bot.config_manager.get_enabled_symbols()}
 
@@ -210,6 +221,17 @@ async def start_symbol(symbol: str, bot = Depends(get_current_bot)):
                 "error": f"DB file locked ({e}). Please terminate all or restart bot."
             }
     
+    # [FIX] Auto-Restart Trading Engine if stopped
+    if not trading_engine.running:
+        print("[SERVER] Restarting Trading Engine...")
+        asyncio.create_task(trading_engine.start())
+        
+        # Wait for engine to initialize (up to 5s)
+        for _ in range(10):
+            if trading_engine.running:
+                break
+            await asyncio.sleep(0.5)
+
     # Enable the symbol first
     bot.config_manager.enable_symbol(symbol, True)
     await bot.start_symbol(symbol)
