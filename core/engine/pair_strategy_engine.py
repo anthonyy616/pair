@@ -4,10 +4,10 @@ Pair Strategy Engine
 Implements the paired-position trading strategy:
 1. First atomic fire: Open Bx (buy) + Sy (sell) at start price
 2. Wait for grid_distance pips movement
-3. Second atomic fire: Open Sx (sell) + By (buy)
-4. Record location (UP/DOWN) of second fire relative to first
-5. On TP hit: location-aware single fire execution
-6. Nuclear reset on invalid TP direction or all positions closed
+3. Second atomic fire: Open Sx (sell) + By (buy), record price
+4. On TP hit: close the paired leg (Bx<->Sx, Sy<->By)
+5. First TP: fire single (TP below 2nd fire = BUY, above = SELL)
+6. All positions closed: auto-restart cycle (or stop if graceful)
 """
 
 from dataclasses import dataclass, field, asdict
@@ -42,11 +42,15 @@ class StrategyState:
     by_ticket: int = 0
     by_entry: float = 0.0
 
-    # Single Fire (user-configured direction: buy or sell)
+    # Single Fire (direction determined dynamically: TP below 2nd fire = buy, above = sell)
     single_fire_ticket: int = 0
     single_fire_entry: float = 0.0
+    single_fire_dir: str = ""  # Actual direction the single fire was opened with
 
-    # Location of second atomic fire relative to first
+    # Second atomic fire reference price (used to determine single fire direction)
+    second_fire_price: float = 0.0
+
+    # Location of second atomic fire relative to first (for logging)
     location: str = ""  # "UP" or "DOWN"
 
     # PnL tracking
@@ -135,11 +139,6 @@ class PairStrategyEngine:
     @property
     def by_lot(self) -> float:
         return float(self.config.get('by_lot', 0.01))
-
-    @property
-    def single_fire_direction(self) -> str:
-        """User-configured direction for the single fire order (buy or sell)"""
-        return self.config.get('single_fire_direction', 'sell')
 
     @property
     def single_fire_lot(self) -> float:
@@ -319,11 +318,12 @@ class PairStrategyEngine:
 
         trigger_price = ask if triggered_up else bid
 
-        # Record location of second atomic fire
+        # Record location and reference price of second atomic fire
         self.state.location = "UP" if triggered_up else "DOWN"
-        print(f"[LOCATION] {self.symbol}: Second atomic fire location = {self.state.location}")
+        self.state.second_fire_price = trigger_price
+        print(f"[LOCATION] {self.symbol}: Second atomic fire location = {self.state.location} @ {trigger_price:.5f}")
         self.activity_log.log_info(
-            f"Second atomic fire location: {self.state.location} (trigger @ {trigger_price:.5f})"
+            f"Second atomic fire location: {self.state.location} (price @ {trigger_price:.5f})"
         )
 
         # Check if graceful stop is active - skip opening second pair
@@ -640,63 +640,79 @@ class PairStrategyEngine:
 
     async def _handle_tp_hit(self, direction: str, close_price: float, leg: str):
         """
-        Handle a TP hit using location-aware logic.
-
-        Location UP + Buy TP + First   -> Execute single fire
-        Location UP + Buy TP + Not 1st -> Blocked (expansion blocked)
-        Location UP + Sell TP           -> Nuclear reset
-
-        Location DOWN + Sell TP + First   -> Execute single fire
-        Location DOWN + Sell TP + Not 1st -> Blocked (expansion blocked)
-        Location DOWN + Buy TP             -> Nuclear reset
+        Handle a TP hit:
+        1. Close the other leg of the pair that TP'd (Bx<->Sx, Sy<->By)
+        2. On first TP: determine single fire direction by comparing
+           close_price to second_fire_price (below = BUY, above = SELL)
+        3. On subsequent TPs: log "expansion blocked"
         """
-        location = self.state.location
+        # Always close the paired leg
+        await self._close_paired_leg(leg)
 
-        if not location:
-            # TP hit before second atomic fire - location not yet determined
+        # Check if second fire has happened
+        if not self.state.second_fire_price:
             print(f"[TP-EARLY] {self.symbol}: TP hit on {leg} before second fire. No single fire action.")
             self.activity_log.log_info(f"Early TP hit on {leg} ({direction}) before second fire - no action")
             return
 
-        if location == "UP":
-            if direction == "buy":
-                if not self.state.first_tp_handled:
-                    # First buy TP with location UP -> execute single fire
-                    self.state.first_tp_handled = True
-                    print(f"[FIRST-TP] {self.symbol}: Buy TP hit, location UP -> Executing single {self.single_fire_direction}")
-                    self.activity_log.log_info(
-                        f"First TP (buy) with location UP -> executing single fire ({self.single_fire_direction})"
-                    )
-                    await self._execute_single_fire(close_price)
-                else:
-                    print(f"[BLOCKED] {self.symbol}: Expansion blocked - this wasn't the first TP")
-                    self.activity_log.log_info("Expansion blocked: not the first TP hit")
-            else:  # sell TP hit with location UP
-                print(f"[BLOCKED] {self.symbol}: Sell TP hit and location is UP -> Nuclear Reset")
-                self.activity_log.log_info("Blocked: sell TP hit and location is UP -> Nuclear Reset")
-                await self._nuclear_reset_and_restart("SELL_TP_LOCATION_UP", self.state.realized_pnl)
+        if not self.state.first_tp_handled:
+            self.state.first_tp_handled = True
 
-        elif location == "DOWN":
-            if direction == "sell":
-                if not self.state.first_tp_handled:
-                    # First sell TP with location DOWN -> execute single fire
-                    self.state.first_tp_handled = True
-                    print(f"[FIRST-TP] {self.symbol}: Sell TP hit, location DOWN -> Executing single {self.single_fire_direction}")
-                    self.activity_log.log_info(
-                        f"First TP (sell) with location DOWN -> executing single fire ({self.single_fire_direction})"
-                    )
-                    await self._execute_single_fire(close_price)
-                else:
-                    print(f"[BLOCKED] {self.symbol}: Expansion blocked - this wasn't the first TP")
-                    self.activity_log.log_info("Expansion blocked: not the first TP hit")
-            else:  # buy TP hit with location DOWN
-                print(f"[BLOCKED] {self.symbol}: Buy TP hit and location is DOWN -> Nuclear Reset")
-                self.activity_log.log_info("Blocked: buy TP hit and location is DOWN -> Nuclear Reset")
-                await self._nuclear_reset_and_restart("BUY_TP_LOCATION_DOWN", self.state.realized_pnl)
+            # Determine direction: TP below second fire price -> BUY, above -> SELL
+            if close_price < self.state.second_fire_price:
+                fire_direction = "buy"
+            else:
+                fire_direction = "sell"
 
-    async def _execute_single_fire(self, trigger_price: float):
-        """Execute the user-configured single fire order."""
-        direction = self.single_fire_direction
+            print(f"[FIRST-TP] {self.symbol}: {leg} TP @ {close_price:.5f}, "
+                  f"second_fire @ {self.state.second_fire_price:.5f} -> Single {fire_direction}")
+            self.activity_log.log_info(
+                f"First TP ({leg}) @ {close_price:.5f} vs second_fire @ {self.state.second_fire_price:.5f} "
+                f"-> executing single fire ({fire_direction})"
+            )
+            await self._execute_single_fire(close_price, fire_direction)
+        else:
+            print(f"[BLOCKED] {self.symbol}: Expansion blocked - this wasn't the first TP")
+            self.activity_log.log_info("Expansion blocked: not the first TP hit")
+
+    async def _close_paired_leg(self, leg: str):
+        """Close the other leg of the pair that just TP'd. Bx<->Sx, Sy<->By."""
+        # Map each leg to its counterpart's state attribute prefix
+        counterpart_map = {
+            "Bx": "sx",
+            "Sx": "bx",
+            "Sy": "by",
+            "By": "sy",
+        }
+
+        counterpart = counterpart_map.get(leg)
+        if not counterpart:
+            return  # SingleFire or unknown leg - no pair to close
+
+        ticket_attr = f"{counterpart}_ticket"
+        entry_attr = f"{counterpart}_entry"
+
+        counterpart_ticket = getattr(self.state, ticket_attr, 0)
+        if counterpart_ticket <= 0:
+            return  # Already closed
+
+        print(f"[PAIR-CLOSE] {self.symbol}: Closing paired leg {counterpart.upper()} (ticket {counterpart_ticket})")
+        self.activity_log.log_info(f"Closing paired leg {counterpart.upper()} (ticket {counterpart_ticket})")
+
+        if self._close_position(counterpart_ticket):
+            # Clear from state
+            setattr(self.state, ticket_attr, 0)
+            setattr(self.state, entry_attr, 0.0)
+            # Clear from tracking
+            if counterpart_ticket in self.ticket_map:
+                del self.ticket_map[counterpart_ticket]
+            if counterpart_ticket in self.ticket_touch_flags:
+                del self.ticket_touch_flags[counterpart_ticket]
+        else:
+            print(f"[ERROR] {self.symbol}: Failed to close paired leg {counterpart.upper()}")
+
+    async def _execute_single_fire(self, trigger_price: float, direction: str):
+        """Execute the dynamically-determined single fire order."""
         print(f"[SINGLE-FIRE] {self.symbol}: Executing single {direction} "
               f"(lot={self.single_fire_lot}, tp={self.single_fire_tp_pips}, sl={self.single_fire_sl_pips})")
         self.activity_log.log_info(
@@ -711,6 +727,7 @@ class PairStrategyEngine:
         if ticket:
             self.state.single_fire_ticket = ticket
             self.state.single_fire_entry = entry
+            self.state.single_fire_dir = direction
 
             if direction == "buy":
                 tp = entry + self.single_fire_tp_pips
@@ -920,8 +937,8 @@ class PairStrategyEngine:
             positions.append(("sell", self.state.sy_entry, self.sy_lot))
         if self.state.by_ticket > 0:
             positions.append(("buy", self.state.by_entry, self.by_lot))
-        if self.state.single_fire_ticket > 0:
-            positions.append((self.single_fire_direction, self.state.single_fire_entry, self.single_fire_lot))
+        if self.state.single_fire_ticket > 0 and self.state.single_fire_dir:
+            positions.append((self.state.single_fire_dir, self.state.single_fire_entry, self.single_fire_lot))
 
         return positions
 

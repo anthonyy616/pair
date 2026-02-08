@@ -1,0 +1,68 @@
+Okay so the next part might make this fix look a little counter-productive but it's for no more TP hits to fire single pair. 
+because we'll use explicit math to do it. Let me explain, you know we fired single fire at the very first TP    
+hit well not like that anymore. The criteria for firing single should be this. We basically use ONLY math. This way ->  
+  
+  Let's say we start at price 500 with a grid distance of 50 TP of 150 (3X of grid dist) and SL of 200 (4X of grid dist) - 
+  so Bx and Sy fire at 500 and when price goes to 450, we will fire the second atomic fire. 
+  Our current system uses the first TP detected but Sy would always hit TP here first at 350 which would make it buy but NO this is wrong. 
+  
+  Instead we always have to use the entry of the SECOND ATOMIC fire +/- 3x the grid distance. 
+  In this case since the second atomic fire opened below the first we USE : price of second atomic fire - 3X (grid distance input) to fire the BUY as it's below. 
+  Now you know sometimes because of spread from the broker (WelTrade) we might get this value mathematically but not actually hit TP for the Sx of the second atomic fire   
+
+  so in the rare case the TP of Sx doesn't hit and the SL of Bx doesn't hit too then we should force a close on ONLY the pair X (this check should happen after single fire - this is just a rare case handler as price could reverse anywhere) .               
+  
+  
+Now for the reverse version where the second atomic fire opens above the first atomic fire. 
+we will do the same thing but we will use the price of the second atomic fire + 3X (grid distance input) to fire the SELL as it's above. 
+Then also apply the same rare case handler I explained above to close the pair Y.
+
+So e.g. for the second reverse version where we sell:
+
+Bx Sy - price 200
+and By Sx - price 250
+
+we will fire the SELL at price of second atomic fire + 3X (grid distance input) = 250 + 150 = 400 (even though the Bx would hit TP At 350)
+
+Understand?
+
+
+Now the Part 2 of this implementation:
+
+The reverse case for the first example would be when the second atomic fire opens BELOW the first atomic fire. 
+and price then reverses above the second atomic fire. 
+
+Now what should happen? Because we're no more using TP hits for ANYTHING so we will also use math to determine when we should close all trades and restart just like we're doing now with the first TP hit but in the reverse case. 
+
+So the math is simple addition and subtraction again but the value would come from a field that would be added in the UI which we will name Protection Distance. 
+
+So let's assume you've added it to the UI and set the protection distance to 100 (remember the grid distance is 50 so 100 is 2X of grid distance which will be commonly used by the user but allow them to type in still)
+
+Then let's say we have the following scenario:
+
+Bx Sy - price 250
+and By Sx - price 200
+
+Since the entry of the second atomic fire is below the entry of the first atomic fire we should ONLY be BUYING (single fire) at 200 - 150 = 50 but if price now starts reversing after the second atomic fire what we do is this
+
+the entry of the second atomic fire + protection distance to cancel ALL trades and restart the strategy again.  
+
+So in this case we would close all trades and restart at price of second atomic fire + protection distance = 200 + 100 = 300
+
+Then another example 
+
+Bx Sy - price 200
+and By Sx - price 250
+
+Since the entry of the second atomic fire is above the entry of the first atomic fire we should ONLY be SELLING (single fire) at 200 + 150 = 350 but if price now starts reversing after the second atomic fire what we do is this
+
+the entry of the second atomic fire - protection distance to cancel ALL trades and restart the strategy again.  
+
+So in this case we would close all trades and restart at price of second atomic fire - protection distance = 250 - 100 = 150
+
+
+Do you understand?
+
+So no more TP hits for anything. We will use math to determine when to close all trades and restart the strategy OR to fire single fire - so any code that uses TP should be removed to avoid conflicts and also make sure to add the rare-case handlers I talked about when firing single fire so that we never have a pair that was meant to be closing naturally through TP and SL but didnt because of minor spread difference not actually activating it.
+
+Don't worry, just assume that the TP would always be set to 3x the grid distance and SL to 4x the grid distance. 

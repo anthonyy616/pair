@@ -64,7 +64,6 @@ class SymbolConfig(BaseModel):
     sy_lot: Optional[float] = None               # Initial Sell lot
     sx_lot: Optional[float] = None               # Completing Sell lot
     by_lot: Optional[float] = None               # Completing Buy lot
-    single_fire_direction: Optional[str] = None  # Single fire direction (buy/sell)
     single_fire_lot: Optional[float] = None      # Single fire lot size
     single_fire_tp_pips: Optional[float] = None  # Single fire TP distance
     single_fire_sl_pips: Optional[float] = None  # Single fire SL distance
