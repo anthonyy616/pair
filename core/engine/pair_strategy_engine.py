@@ -320,31 +320,34 @@ class PairStrategyEngine:
         self.state.location = "UP" if triggered_up else "DOWN"
         self.state.second_fire_price = trigger_price
         print(f"[LOCATION] {self.symbol}: Second atomic fire location = {self.state.location} @ {trigger_price:.5f}")
+        direction_word = "below" if self.state.location == "DOWN" else "above"
         self.activity_log.log_info(
-            f"Second atomic fire location: {self.state.location} (price @ {trigger_price:.5f})"
+            f"2nd pair opened {direction_word} the 1st pair (at price {trigger_price:.2f})"
         )
 
         # Calculate math-based trigger prices
         if self.state.location == "DOWN":
             self.state.single_fire_trigger_price = trigger_price - 3 * self.grid_distance
             self.state.protection_trigger_price = trigger_price + self.protection_distance
+            sf_dir = "BUY"
             print(f"[TRIGGERS] {self.symbol}: SF trigger (BUY) @ bid <= {self.state.single_fire_trigger_price:.5f}, "
                   f"Protection @ ask >= {self.state.protection_trigger_price:.5f}")
         else:  # UP
             self.state.single_fire_trigger_price = trigger_price + 3 * self.grid_distance
             self.state.protection_trigger_price = trigger_price - self.protection_distance
+            sf_dir = "SELL"
             print(f"[TRIGGERS] {self.symbol}: SF trigger (SELL) @ ask >= {self.state.single_fire_trigger_price:.5f}, "
                   f"Protection @ bid <= {self.state.protection_trigger_price:.5f}")
 
         self.activity_log.log_info(
-            f"Trigger prices: single_fire={self.state.single_fire_trigger_price:.5f}, "
-            f"protection={self.state.protection_trigger_price:.5f}"
+            f"Recovery {sf_dir} will trigger at price {self.state.single_fire_trigger_price:.2f}  |  "
+            f"Protection reset at price {self.state.protection_trigger_price:.2f}"
         )
 
         # Check if graceful stop is active - skip opening second pair
         if self.graceful_stop:
             self.activity_log.log_info(
-                f"Grid distance reached @ {trigger_price:.2f} -> SKIPPING Sx+By (graceful_stop active)"
+                f"Grid distance reached at {trigger_price:.2f} but graceful stop is active — skipping 2nd pair"
             )
             # Transition directly to monitoring with just Bx+Sy
             self.state.pairs_complete = True
@@ -675,7 +678,7 @@ class PairStrategyEngine:
                 print(f"[MATH-TRIGGER] {self.symbol}: Single fire BUY triggered "
                       f"(bid {bid:.5f} <= {self.state.single_fire_trigger_price:.5f})")
                 self.activity_log.log_info(
-                    f"Math trigger: single fire BUY (bid={bid:.5f} <= trigger={self.state.single_fire_trigger_price:.5f})"
+                    f"Price reached {bid:.2f} — placing Recovery BUY trade"
                 )
                 self.state.single_fire_executed = True
                 await self._execute_single_fire(bid, "buy")
@@ -688,7 +691,7 @@ class PairStrategyEngine:
                 print(f"[PROTECTION] {self.symbol}: Protection triggered "
                       f"(ask {ask:.5f} >= {self.state.protection_trigger_price:.5f})")
                 self.activity_log.log_info(
-                    f"Protection trigger: nuclear reset (ask={ask:.5f} >= protection={self.state.protection_trigger_price:.5f})"
+                    f"Price reversed to {ask:.2f} — hit protection level. Closing all trades and restarting."
                 )
                 await self._nuclear_reset_and_restart("PROTECTION_DISTANCE", self.state.realized_pnl)
                 return
@@ -699,7 +702,7 @@ class PairStrategyEngine:
                 print(f"[MATH-TRIGGER] {self.symbol}: Single fire SELL triggered "
                       f"(ask {ask:.5f} >= {self.state.single_fire_trigger_price:.5f})")
                 self.activity_log.log_info(
-                    f"Math trigger: single fire SELL (ask={ask:.5f} >= trigger={self.state.single_fire_trigger_price:.5f})"
+                    f"Price reached {ask:.2f} — placing Recovery SELL trade"
                 )
                 self.state.single_fire_executed = True
                 await self._execute_single_fire(ask, "sell")
@@ -712,7 +715,7 @@ class PairStrategyEngine:
                 print(f"[PROTECTION] {self.symbol}: Protection triggered "
                       f"(bid {bid:.5f} <= {self.state.protection_trigger_price:.5f})")
                 self.activity_log.log_info(
-                    f"Protection trigger: nuclear reset (bid={bid:.5f} <= protection={self.state.protection_trigger_price:.5f})"
+                    f"Price reversed to {bid:.2f} — hit protection level. Closing all trades and restarting."
                 )
                 await self._nuclear_reset_and_restart("PROTECTION_DISTANCE", self.state.realized_pnl)
                 return
@@ -742,7 +745,7 @@ class PairStrategyEngine:
                 continue  # Already closed
 
             print(f"[FORCE-CLOSE] {self.symbol}: Closing {leg_prefix.upper()} (ticket {ticket})")
-            self.activity_log.log_info(f"Force-closing {leg_prefix.upper()} (ticket {ticket})")
+            self.activity_log.log_info(f"Closing leftover {leg_prefix.upper()} trade (may not have closed due to spread)")
 
             if self._close_position(ticket):
                 setattr(self.state, f"{leg_prefix}_ticket", 0)
@@ -782,7 +785,7 @@ class PairStrategyEngine:
             return False
 
         print(f"[SF-CLOSED] {self.symbol}: Single fire closed (TP/SL). Nuclear reset all remaining.")
-        self.activity_log.log_info("Single fire closed - nuclear reset and restart")
+        self.activity_log.log_info("Recovery trade completed — closing all remaining trades and restarting")
         await self._nuclear_reset_and_restart("SINGLE_FIRE_CLOSED", self.state.realized_pnl)
         return True
 
@@ -791,7 +794,7 @@ class PairStrategyEngine:
         print(f"[SINGLE-FIRE] {self.symbol}: Executing single {direction} "
               f"(lot={self.single_fire_lot}, tp={self.single_fire_tp_pips}, sl={self.single_fire_sl_pips})")
         self.activity_log.log_info(
-            f"Executing single fire: {direction} lot={self.single_fire_lot}"
+            f"Placing Recovery {direction.upper()} — lot size: {self.single_fire_lot:.2f}"
         )
 
         ticket, entry = await self._execute_market_order(

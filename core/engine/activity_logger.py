@@ -1,164 +1,240 @@
 """
 Activity Logger for Pair Strategy Engine
 
-Logs all trading activity to downloadable files:
-- TP/SL hits, PnL calculations, threshold events, cycle fires, resets
+Logs all trading activity to downloadable files in plain English.
+Designed to be readable by anyone — no technical jargon.
 """
 
 import os
 from datetime import datetime
 from typing import Optional
 
+# Friendly names for position legs
+LEG_NAMES = {
+    "Bx": "1st Buy",
+    "Sx": "2nd Sell",
+    "Sy": "1st Sell",
+    "By": "2nd Buy",
+    "SingleFire": "Recovery Trade",
+}
+
 
 class ActivityLogger:
     """
     Per-symbol activity logging with timestamped, downloadable files.
-    
-    Log files stored in: logs/activity/{user_id}/{symbol}_{date}.log
+
+    Log files stored in: logs/users/{user_id}/sessions/{symbol}_{date}.log
     """
-    
+
     def __init__(self, symbol: str, user_id: str = "default", session_logger=None):
         self.symbol = symbol
         self.user_id = user_id
         self.session_logger = session_logger
-        
+
         # [FIX] Use absolute path relative to project root to avoid CWD issues
         # core/engine/activity_logger.py -> core/engine -> core -> root -> logs
         from pathlib import Path
         root_dir = Path(__file__).resolve().parent.parent.parent
         self.log_dir = root_dir / "logs" / "users" / user_id / "sessions"
-        
+
         # Ensure directory exists
         os.makedirs(self.log_dir, exist_ok=True)
-        
+
         # Generate filename with date
         date_str = datetime.now().strftime("%Y-%m-%d")
         safe_symbol = symbol.replace(" ", "_")
         # Prefix with 'activity_' so we can distinguish from session logs
         self.log_file = self.log_dir / f"activity_{safe_symbol}_{date_str}.log"
-    
+
+    def _friendly_leg(self, leg: str) -> str:
+        """Convert leg code to friendly name"""
+        return LEG_NAMES.get(leg, leg)
+
+    def _friendly_direction(self, direction: str) -> str:
+        """Convert direction to friendly name"""
+        return "BUY" if direction == "buy" else "SELL"
+
     def _write(self, entry: str):
         """Write timestamped entry to log file"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        line = f"{timestamp} | {entry}\n"
-        
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        line = f"  {timestamp}  {entry}\n"
+
         with open(self.log_file, "a", encoding="utf-8") as f:
             f.write(line)
-        
+
         # Also print to console
         print(f"[{self.symbol}] {entry}")
-        
-        # [NEW] Also write to session log if available
+
+        # Also write to session log if available
         if self.session_logger:
-            # We use 'log' because it adds its own timestamp
-            # Prepend symbol name for context in the merged log
             self.session_logger.log(f"[{self.symbol}] {entry}")
-    
+
+    def _write_header(self, text: str):
+        """Write a prominent section header"""
+        border = "=" * 60
+        self._write(border)
+        self._write(f"  {text}")
+        self._write(border)
+
+    def _write_separator(self):
+        """Write a light separator between events"""
+        self._write("-" * 40)
+
     # ========================
     # FIRE EVENTS
     # ========================
-    
-    def log_fire(self, cycle: int, leg_name: str, price: float, lot: float, 
+
+    def log_fire(self, cycle: int, leg_name: str, price: float, lot: float,
                  tp: float, sl: float, ticket: int = 0):
         """Log a position opening (atomic fire)"""
+        friendly = self._friendly_leg(leg_name)
+        direction = "BUY" if leg_name in ("Bx", "By", "SingleFire") else "SELL"
+        if leg_name == "SingleFire":
+            # Direction is set by caller via log_info before this
+            direction = "BUY" if tp > price else "SELL"
+
         self._write(
-            f"[FIRE] C{cycle} {leg_name} OPEN @ {price:.2f} "
-            f"(lot={lot:.2f}) TP={tp:.2f} SL={sl:.2f} ticket={ticket}"
+            f"Opened {friendly} ({direction}) at price {price:.2f}  |  "
+            f"Lot size: {lot:.2f}  |  Take Profit: {tp:.2f}  |  Stop Loss: {sl:.2f}"
         )
-    
+
     def log_second_fire(self, cycle: int, price: float):
         """Log the second atomic fire (grid distance reached)"""
-        self._write(f"[FIRE] C{cycle} Grid distance reached @ {price:.2f} → Opening Sx+By")
-    
+        self._write_separator()
+        self._write(
+            f"Price moved to {price:.2f} — grid distance reached. "
+            f"Opening 2nd pair of trades (2nd Sell + 2nd Buy)..."
+        )
+
     # ========================
     # TP/SL EVENTS
     # ========================
-    
-    def log_tp_hit(self, ticket: int, leg: str, tp_price: float, 
+
+    def log_tp_hit(self, ticket: int, leg: str, tp_price: float,
                    realized_pnl: float, action: str = ""):
         """Log a take profit hit"""
+        friendly = self._friendly_leg(leg)
+        result = "profit" if realized_pnl >= 0 else "loss"
         self._write(
-            f"[TP] {leg} closed @ {tp_price:.2f} | "
-            f"pnl=${realized_pnl:+.2f} | {action}"
+            f"{friendly} hit Take Profit at {tp_price:.2f}  |  "
+            f"Result: ${realized_pnl:+.2f} ({result})"
         )
-    
-    def log_sl_hit(self, ticket: int, leg: str, sl_price: float, 
+
+    def log_sl_hit(self, ticket: int, leg: str, sl_price: float,
                    realized_pnl: float):
         """Log a stop loss hit"""
+        friendly = self._friendly_leg(leg)
         self._write(
-            f"[SL] {leg} closed @ {sl_price:.2f} | "
-            f"pnl=${realized_pnl:+.2f}"
+            f"{friendly} hit Stop Loss at {sl_price:.2f}  |  "
+            f"Result: ${realized_pnl:+.2f} (loss)"
         )
-    
-    def log_single_buy_opened(self, cycle: int, price: float, lot: float, 
+
+    def log_single_buy_opened(self, cycle: int, price: float, lot: float,
                                tp: float, sl: float, ticket: int = 0):
-        """Log recovery single buy opening"""
+        """Log recovery single buy opening (legacy — kept for compatibility)"""
         self._write(
-            f"[SINGLE_BUY] C{cycle} OPEN @ {price:.2f} "
-            f"(lot={lot:.2f}) TP={tp:.2f} SL={sl:.2f} ticket={ticket}"
+            f"Opened Recovery BUY at {price:.2f}  |  "
+            f"Lot size: {lot:.2f}  |  Take Profit: {tp:.2f}  |  Stop Loss: {sl:.2f}"
         )
-    
+
     # ========================
-    # LIQUIDATION PRICE EVENTS
+    # LIQUIDATION PRICE EVENTS (legacy — kept for compatibility)
     # ========================
-    
+
     def log_liquidation_calc(self, profit_price: float, loss_price: float,
                              net_lots: float, realized_pnl: float):
         """Log calculated liquidation prices"""
         self._write(
-            f"[LIQUIDATION] profit_price={profit_price:.2f} "
-            f"loss_price={loss_price:.2f} | "
-            f"net_lots={net_lots:.4f} realized=${realized_pnl:.2f}"
+            f"Calculated exit prices — Profit target at: {profit_price:.2f}  |  "
+            f"Loss limit at: {loss_price:.2f}  |  Running P&L: ${realized_pnl:.2f}"
         )
-    
+
     # ========================
-    # THRESHOLD EVENTS
+    # THRESHOLD EVENTS (legacy — kept for compatibility)
     # ========================
-    
-    def log_threshold_hit(self, threshold_type: str, price: float, 
+
+    def log_threshold_hit(self, threshold_type: str, price: float,
                           total_pnl: float):
-        """Log when max profit/loss/drawdown threshold is hit"""
+        """Log when max profit/loss threshold is hit"""
+        friendly_type = {
+            "MAX_PROFIT": "Maximum profit target",
+            "MAX_LOSS": "Maximum loss limit",
+        }.get(threshold_type, threshold_type)
+
         self._write(
-            f"[THRESHOLD] {threshold_type} hit @ {price:.2f} | "
-            f"total_pnl=${total_pnl:+.2f}"
+            f"{friendly_type} reached at price {price:.2f}  |  "
+            f"Total P&L: ${total_pnl:+.2f}"
         )
-    
+
     # ========================
     # RESET/LIFECYCLE EVENTS
     # ========================
-    
-    def log_reset(self, old_cycle: int, new_cycle: int, reason: str, 
+
+    def log_reset(self, old_cycle: int, new_cycle: int, reason: str,
                   total_pnl: float):
         """Log nuclear reset and restart"""
+        friendly_reasons = {
+            "ALL_CLOSED": "All trades closed naturally",
+            "PROTECTION_DISTANCE": "Price reversed past protection level — safety reset",
+            "SINGLE_FIRE_CLOSED": "Recovery trade completed (TP or SL hit)",
+            "MAX_PROFIT": "Maximum profit target reached",
+            "MAX_LOSS": "Maximum loss limit reached",
+        }
+        friendly_reason = friendly_reasons.get(reason, reason)
+
+        self._write_separator()
         self._write(
-            f"[RESET] C{old_cycle}→C{new_cycle} | "
-            f"reason={reason} | total_pnl=${total_pnl:+.2f}"
+            f"Cycle #{old_cycle} ended  |  Reason: {friendly_reason}  |  "
+            f"Cycle P&L: ${total_pnl:+.2f}"
         )
-    
+        self._write(f"Starting new cycle #{new_cycle}...")
+        self._write_separator()
+
     def log_graceful_stop(self, cycle: int, reason: str):
         """Log graceful stop activation"""
-        self._write(f"[GRACEFUL_STOP] C{cycle} | reason={reason}")
-    
+        self._write(
+            "Graceful stop requested — bot will stop after all open trades close."
+        )
+
     def log_start(self, cycle: int, start_price: float):
         """Log strategy start"""
-        self._write(f"[START] C{cycle} | start_price={start_price:.2f}")
-    
+        self._write_header(
+            f"CYCLE #{cycle} STARTED  |  {self.symbol}  |  Entry price: {start_price:.2f}"
+        )
+
     def log_stop(self, cycle: int, reason: str = "manual"):
         """Log strategy stop"""
-        self._write(f"[STOP] C{cycle} | reason={reason}")
-    
+        friendly_reasons = {
+            "manual": "Manually stopped by user",
+            "graceful_stop_immediate": "Graceful stop — no open trades, stopped immediately",
+            "all_closed_graceful_stop": "Graceful stop — all trades closed, bot stopped",
+            "graceful_stop_complete": "Graceful stop completed",
+        }
+        friendly_reason = friendly_reasons.get(reason, reason)
+        self._write_header(f"BOT STOPPED  |  {friendly_reason}")
+
     # ========================
-    # DEBUG/INFO
+    # INFO/DEBUG
     # ========================
-    
+
     def log_info(self, message: str):
         """Log general info message"""
-        self._write(f"[INFO] {message}")
-    
+        self._write(message)
+
     def log_error(self, message: str):
         """Log error message"""
-        self._write(f"[ERROR] {message}")
-    
+        self._write(f"ERROR: {message}")
+
     def log_phase_transition(self, old_phase: str, new_phase: str):
         """Log phase state transition"""
-        self._write(f"[PHASE] {old_phase} → {new_phase}")
+        friendly_phases = {
+            "IDLE": "Idle",
+            "FIRST_FIRE": "Opening first pair of trades",
+            "AWAITING_SECOND": "Waiting for price to reach grid distance",
+            "PAIRS_COMPLETE": "All 4 trades open — monitoring triggers",
+            "PAIRS_COMPLETE (partial)": "Partial trades open (graceful stop active)",
+            "MONITORING": "Recovery trade placed — waiting for outcome",
+            "RESETTING": "Resetting for new cycle",
+        }
+        new_friendly = friendly_phases.get(new_phase, new_phase)
+        self._write(f"Status: {new_friendly}")
