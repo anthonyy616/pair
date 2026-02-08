@@ -4,9 +4,11 @@ Pair Strategy Engine
 Implements the paired-position trading strategy:
 1. First atomic fire: Open Bx (buy) + Sy (sell) at start price
 2. Wait for grid_distance pips movement
-3. Second atomic fire: Open Sx (sell) + By (buy), record price
-4. On TP hit: close the paired leg (Bx<->Sx, Sy<->By)
-5. First TP: fire single (TP below 2nd fire = BUY, above = SELL)
+3. Second atomic fire: Open Sx (sell) + By (buy), record price & calculate triggers
+4. Math-based triggers (PAIRS_COMPLETE phase):
+   a. Single fire trigger: price reaches 3*grid_distance past second fire -> fire recovery
+   b. Protection trigger: price reverses past protection_distance -> nuclear reset
+5. After single fire: force-close the opposing pair (spread safety)
 6. All positions closed: auto-restart cycle (or stop if graceful)
 """
 
@@ -42,31 +44,25 @@ class StrategyState:
     by_ticket: int = 0
     by_entry: float = 0.0
 
-    # Single Fire (direction determined dynamically: TP below 2nd fire = buy, above = sell)
+    # Single Fire
     single_fire_ticket: int = 0
     single_fire_entry: float = 0.0
     single_fire_dir: str = ""  # Actual direction the single fire was opened with
 
-    # Second atomic fire reference price (used to determine single fire direction)
+    # Second atomic fire reference
     second_fire_price: float = 0.0
-
-    # Location of second atomic fire relative to first (for logging)
     location: str = ""  # "UP" or "DOWN"
+
+    # Math-based trigger prices (calculated when second fire opens)
+    single_fire_trigger_price: float = 0.0  # Price level that triggers single fire
+    protection_trigger_price: float = 0.0   # Price level that triggers nuclear reset
 
     # PnL tracking
     realized_pnl: float = 0.0
 
-    # # Max profit/loss liquidation prices (commented out - may be re-implemented later)
-    # max_profit_price: float = 0.0
-    # max_loss_price: float = 0.0
-
-    # # Calculation cache (commented out - used by liquidation price system)
-    # net_lots: float = 0.0
-    # constant: float = 0.0
-
     # Flags
     pairs_complete: bool = False
-    first_tp_handled: bool = False
+    single_fire_executed: bool = False
     cycle_count: int = 0
 
 
@@ -152,14 +148,9 @@ class PairStrategyEngine:
     def single_fire_sl_pips(self) -> float:
         return float(self.config.get('single_fire_sl_pips', 200.0))
 
-    # # Max profit/loss config (commented out - may be re-implemented later)
-    # @property
-    # def max_profit_usd(self) -> float:
-    #     return float(self.config.get('max_profit_usd', 100.0))
-    #
-    # @property
-    # def max_loss_usd(self) -> float:
-    #     return float(self.config.get('max_loss_usd', 50.0))
+    @property
+    def protection_distance(self) -> float:
+        return float(self.config.get('protection_distance', 100.0))
 
     # ========================
     # LIFECYCLE
@@ -288,13 +279,16 @@ class PairStrategyEngine:
             # 1. Update touch flags FIRST
             self._update_touch_flags(ask, bid)
 
-            # 2. Check position drops (TP/SL) in all active phases
+            # 2. Check position drops (cleanup/PnL only - no strategic TP logic)
             await self._check_position_drops(ask, bid)
 
-            # 3. Check if all positions are closed
+            # 3. Check math-based triggers (single fire + protection)
+            await self._check_math_triggers(ask, bid)
+
+            # 4. Check if all positions are closed
             await self._check_all_positions_closed()
 
-            # 4. Phase-specific logic
+            # 5. Phase-specific logic
             if self.state.phase == "AWAITING_SECOND":
                 await self._handle_awaiting_second(ask, bid)
 
@@ -324,6 +318,23 @@ class PairStrategyEngine:
         print(f"[LOCATION] {self.symbol}: Second atomic fire location = {self.state.location} @ {trigger_price:.5f}")
         self.activity_log.log_info(
             f"Second atomic fire location: {self.state.location} (price @ {trigger_price:.5f})"
+        )
+
+        # Calculate math-based trigger prices
+        if self.state.location == "DOWN":
+            self.state.single_fire_trigger_price = trigger_price - 3 * self.grid_distance
+            self.state.protection_trigger_price = trigger_price + self.protection_distance
+            print(f"[TRIGGERS] {self.symbol}: SF trigger (BUY) @ bid <= {self.state.single_fire_trigger_price:.5f}, "
+                  f"Protection @ ask >= {self.state.protection_trigger_price:.5f}")
+        else:  # UP
+            self.state.single_fire_trigger_price = trigger_price + 3 * self.grid_distance
+            self.state.protection_trigger_price = trigger_price - self.protection_distance
+            print(f"[TRIGGERS] {self.symbol}: SF trigger (SELL) @ ask >= {self.state.single_fire_trigger_price:.5f}, "
+                  f"Protection @ bid <= {self.state.protection_trigger_price:.5f}")
+
+        self.activity_log.log_info(
+            f"Trigger prices: single_fire={self.state.single_fire_trigger_price:.5f}, "
+            f"protection={self.state.protection_trigger_price:.5f}"
         )
 
         # Check if graceful stop is active - skip opening second pair
@@ -631,85 +642,126 @@ class PairStrategyEngine:
             if ticket in self.ticket_touch_flags:
                 del self.ticket_touch_flags[ticket]
 
-            # Handle TP with location-aware logic
-            if is_tp:
-                await self._handle_tp_hit(direction, close_price, leg)
+            # NOTE: No strategic action on TP/SL - math triggers handle all decisions
 
         if dropped:
             await self.save_state()
 
-    async def _handle_tp_hit(self, direction: str, close_price: float, leg: str):
-        """
-        Handle a TP hit:
-        1. Close the other leg of the pair that TP'd (Bx<->Sx, Sy<->By)
-        2. On first TP: determine single fire direction by comparing
-           close_price to second_fire_price (below = BUY, above = SELL)
-        3. On subsequent TPs: log "expansion blocked"
-        """
-        # Always close the paired leg
-        await self._close_paired_leg(leg)
+    # ========================
+    # MATH-BASED TRIGGERS
+    # ========================
 
-        # Check if second fire has happened
+    async def _check_math_triggers(self, ask: float, bid: float):
+        """
+        Check math-based price triggers during PAIRS_COMPLETE phase.
+        Two mutually exclusive exit paths:
+        1. Single fire trigger: price moved 3*grid_distance past second fire -> recovery trade
+        2. Protection trigger: price reversed past protection_distance -> nuclear reset
+        """
+        if self.state.phase != "PAIRS_COMPLETE":
+            return
+        if self.state.single_fire_executed:
+            return
         if not self.state.second_fire_price:
-            print(f"[TP-EARLY] {self.symbol}: TP hit on {leg} before second fire. No single fire action.")
-            self.activity_log.log_info(f"Early TP hit on {leg} ({direction}) before second fire - no action")
             return
 
-        if not self.state.first_tp_handled:
-            self.state.first_tp_handled = True
+        if self.state.location == "DOWN":
+            # Single fire trigger: bid falls to/below trigger -> BUY
+            if bid <= self.state.single_fire_trigger_price:
+                print(f"[MATH-TRIGGER] {self.symbol}: Single fire BUY triggered "
+                      f"(bid {bid:.5f} <= {self.state.single_fire_trigger_price:.5f})")
+                self.activity_log.log_info(
+                    f"Math trigger: single fire BUY (bid={bid:.5f} <= trigger={self.state.single_fire_trigger_price:.5f})"
+                )
+                self.state.single_fire_executed = True
+                await self._execute_single_fire(bid, "buy")
+                # Force-close Pair X (Bx + Sx) - broker spread may have prevented TP/SL
+                await self._force_close_pair("X")
+                return
 
-            # Determine direction: TP below second fire price -> BUY, above -> SELL
-            if close_price < self.state.second_fire_price:
-                fire_direction = "buy"
+            # Protection trigger: ask rises to/above protection price -> nuclear reset
+            if ask >= self.state.protection_trigger_price:
+                print(f"[PROTECTION] {self.symbol}: Protection triggered "
+                      f"(ask {ask:.5f} >= {self.state.protection_trigger_price:.5f})")
+                self.activity_log.log_info(
+                    f"Protection trigger: nuclear reset (ask={ask:.5f} >= protection={self.state.protection_trigger_price:.5f})"
+                )
+                await self._nuclear_reset_and_restart("PROTECTION_DISTANCE", self.state.realized_pnl)
+                return
+
+        elif self.state.location == "UP":
+            # Single fire trigger: ask rises to/above trigger -> SELL
+            if ask >= self.state.single_fire_trigger_price:
+                print(f"[MATH-TRIGGER] {self.symbol}: Single fire SELL triggered "
+                      f"(ask {ask:.5f} >= {self.state.single_fire_trigger_price:.5f})")
+                self.activity_log.log_info(
+                    f"Math trigger: single fire SELL (ask={ask:.5f} >= trigger={self.state.single_fire_trigger_price:.5f})"
+                )
+                self.state.single_fire_executed = True
+                await self._execute_single_fire(ask, "sell")
+                # Force-close Pair Y (By + Sy) - broker spread may have prevented TP/SL
+                await self._force_close_pair("Y")
+                return
+
+            # Protection trigger: bid falls to/below protection price -> nuclear reset
+            if bid <= self.state.protection_trigger_price:
+                print(f"[PROTECTION] {self.symbol}: Protection triggered "
+                      f"(bid {bid:.5f} <= {self.state.protection_trigger_price:.5f})")
+                self.activity_log.log_info(
+                    f"Protection trigger: nuclear reset (bid={bid:.5f} <= protection={self.state.protection_trigger_price:.5f})"
+                )
+                await self._nuclear_reset_and_restart("PROTECTION_DISTANCE", self.state.realized_pnl)
+                return
+
+    async def _force_close_pair(self, pair: str):
+        """
+        Force-close all positions in a pair (X or Y).
+        Pair X = Bx (buy) + Sx (sell)
+        Pair Y = Sy (sell) + By (buy)
+        Called after single fire because broker spread may prevent TP/SL from filling.
+        """
+        if pair == "X":
+            tickets_to_close = [
+                ("bx", self.state.bx_ticket),
+                ("sx", self.state.sx_ticket),
+            ]
+        elif pair == "Y":
+            tickets_to_close = [
+                ("sy", self.state.sy_ticket),
+                ("by", self.state.by_ticket),
+            ]
+        else:
+            return
+
+        for leg_prefix, ticket in tickets_to_close:
+            if ticket <= 0:
+                continue  # Already closed
+
+            print(f"[FORCE-CLOSE] {self.symbol}: Closing {leg_prefix.upper()} (ticket {ticket})")
+            self.activity_log.log_info(f"Force-closing {leg_prefix.upper()} (ticket {ticket})")
+
+            if self._close_position(ticket):
+                setattr(self.state, f"{leg_prefix}_ticket", 0)
+                setattr(self.state, f"{leg_prefix}_entry", 0.0)
+                if ticket in self.ticket_map:
+                    del self.ticket_map[ticket]
+                if ticket in self.ticket_touch_flags:
+                    del self.ticket_touch_flags[ticket]
             else:
-                fire_direction = "sell"
+                # Position may already be closed by broker
+                pos_check = mt5.positions_get(ticket=ticket)
+                if not pos_check:
+                    print(f"[FORCE-CLOSE] {self.symbol}: {leg_prefix.upper()} already closed by broker")
+                    setattr(self.state, f"{leg_prefix}_ticket", 0)
+                    setattr(self.state, f"{leg_prefix}_entry", 0.0)
+                    if ticket in self.ticket_map:
+                        del self.ticket_map[ticket]
+                    if ticket in self.ticket_touch_flags:
+                        del self.ticket_touch_flags[ticket]
+                else:
+                    print(f"[ERROR] {self.symbol}: Failed to force-close {leg_prefix.upper()} (ticket {ticket})")
 
-            print(f"[FIRST-TP] {self.symbol}: {leg} TP @ {close_price:.5f}, "
-                  f"second_fire @ {self.state.second_fire_price:.5f} -> Single {fire_direction}")
-            self.activity_log.log_info(
-                f"First TP ({leg}) @ {close_price:.5f} vs second_fire @ {self.state.second_fire_price:.5f} "
-                f"-> executing single fire ({fire_direction})"
-            )
-            await self._execute_single_fire(close_price, fire_direction)
-        else:
-            print(f"[BLOCKED] {self.symbol}: Expansion blocked - this wasn't the first TP")
-            self.activity_log.log_info("Expansion blocked: not the first TP hit")
-
-    async def _close_paired_leg(self, leg: str):
-        """Close the other leg of the pair that just TP'd. Bx<->Sx, Sy<->By."""
-        # Map each leg to its counterpart's state attribute prefix
-        counterpart_map = {
-            "Bx": "sx",
-            "Sx": "bx",
-            "Sy": "by",
-            "By": "sy",
-        }
-
-        counterpart = counterpart_map.get(leg)
-        if not counterpart:
-            return  # SingleFire or unknown leg - no pair to close
-
-        ticket_attr = f"{counterpart}_ticket"
-        entry_attr = f"{counterpart}_entry"
-
-        counterpart_ticket = getattr(self.state, ticket_attr, 0)
-        if counterpart_ticket <= 0:
-            return  # Already closed
-
-        print(f"[PAIR-CLOSE] {self.symbol}: Closing paired leg {counterpart.upper()} (ticket {counterpart_ticket})")
-        self.activity_log.log_info(f"Closing paired leg {counterpart.upper()} (ticket {counterpart_ticket})")
-
-        if self._close_position(counterpart_ticket):
-            # Clear from state
-            setattr(self.state, ticket_attr, 0)
-            setattr(self.state, entry_attr, 0.0)
-            # Clear from tracking
-            if counterpart_ticket in self.ticket_map:
-                del self.ticket_map[counterpart_ticket]
-            if counterpart_ticket in self.ticket_touch_flags:
-                del self.ticket_touch_flags[counterpart_ticket]
-        else:
-            print(f"[ERROR] {self.symbol}: Failed to close paired leg {counterpart.upper()}")
+        await self.save_state()
 
     async def _execute_single_fire(self, trigger_price: float, direction: str):
         """Execute the dynamically-determined single fire order."""
@@ -1000,8 +1052,10 @@ class PairStrategyEngine:
             "cycle_count": self.state.cycle_count,
             "start_price": self.state.start_price,
             "pairs_complete": self.state.pairs_complete,
-            "first_tp_handled": self.state.first_tp_handled,
+            "single_fire_executed": self.state.single_fire_executed,
             "location": self.state.location,
+            "single_fire_trigger_price": self.state.single_fire_trigger_price,
+            "protection_trigger_price": self.state.protection_trigger_price,
             "open_positions": open_count,
             "realized_pnl": self.state.realized_pnl,
             "graceful_stop": self.graceful_stop,

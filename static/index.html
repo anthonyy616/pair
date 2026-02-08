@@ -680,6 +680,7 @@
             const sfLot = cfg.single_fire_lot || 0.01;
             const sfTpPips = cfg.single_fire_tp_pips || 150;
             const sfSlPips = cfg.single_fire_sl_pips || 200;
+            const protDist = cfg.protection_distance || 100;
 
             return `
             <details class="bg-slate-800/50 rounded border border-slate-700 overflow-hidden" open>
@@ -757,6 +758,16 @@
                                 <label class="block text-[9px] text-red-400">Single SL</label>
                                 <input type="number" id="sfsl_${safeId}" step="1" value="${sfSlPips}"
                                     class="w-full p-1 text-xs rounded bg-slate-900 border border-red-700/50 text-center">
+                            </div>
+                        </div>
+                        <!-- Protection Distance -->
+                        <div class="mt-1">
+                            <div class="grid grid-cols-3 gap-1">
+                                <div>
+                                    <label class="block text-[9px] text-orange-400">Protection (pips)</label>
+                                    <input type="number" id="protdist_${safeId}" step="1" value="${protDist}"
+                                        class="w-full p-1 text-xs rounded bg-slate-900 border border-orange-700/50 text-center">
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -838,7 +849,8 @@
                         by_lot: parseFloat(document.getElementById(`bylot_${safeId}`)?.value) || 0.01,
                         single_fire_lot: parseFloat(document.getElementById(`sflot_${safeId}`)?.value) || 0.01,
                         single_fire_tp_pips: parseFloat(document.getElementById(`sftp_${safeId}`)?.value) || 150,
-                        single_fire_sl_pips: parseFloat(document.getElementById(`sfsl_${safeId}`)?.value) || 200
+                        single_fire_sl_pips: parseFloat(document.getElementById(`sfsl_${safeId}`)?.value) || 200,
+                        protection_distance: parseFloat(document.getElementById(`protdist_${safeId}`)?.value) || 100
                     };
                 }
             });

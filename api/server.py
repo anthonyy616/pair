@@ -67,9 +67,7 @@ class SymbolConfig(BaseModel):
     single_fire_lot: Optional[float] = None      # Single fire lot size
     single_fire_tp_pips: Optional[float] = None  # Single fire TP distance
     single_fire_sl_pips: Optional[float] = None  # Single fire SL distance
-    # # Max profit/loss thresholds (commented out - may be re-implemented later)
-    # max_profit_usd: Optional[float] = None  # Max profit threshold
-    # max_loss_usd: Optional[float] = None    # Max loss threshold
+    protection_distance: Optional[float] = None  # Pips before nuclear reset on reversal
 
 class GlobalConfig(BaseModel):
     """Global settings"""

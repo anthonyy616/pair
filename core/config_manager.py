@@ -170,10 +170,9 @@ class ConfigManager:
                         sf_val = self.config["symbols"][symbol].get(sf_field, 150.0)
                         self.config["symbols"][symbol][sf_field] = max(1.0, float(sf_val))
 
-                    # # Validate USD thresholds (commented out - may be re-implemented later)
-                    # for usd_field in ["max_profit_usd", "max_loss_usd"]:
-                    #     usd_val = self.config["symbols"][symbol].get(usd_field, 50.0)
-                    #     self.config["symbols"][symbol][usd_field] = max(1.0, float(usd_val))
+                    # Validate protection_distance: must be > 0
+                    prot_dist = self.config["symbols"][symbol].get("protection_distance", 100.0)
+                    self.config["symbols"][symbol]["protection_distance"] = max(1.0, float(prot_dist))
         
         self.save_config()
         return self.config
