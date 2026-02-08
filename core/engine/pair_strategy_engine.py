@@ -282,13 +282,17 @@ class PairStrategyEngine:
             # 2. Check position drops (cleanup/PnL only - no strategic TP logic)
             await self._check_position_drops(ask, bid)
 
-            # 3. Check math-based triggers (single fire + protection)
+            # 3. If single fire closed (TP/SL) -> nuclear reset all remaining
+            if await self._check_single_fire_closed():
+                return
+
+            # 4. Check math-based triggers (single fire + protection)
             await self._check_math_triggers(ask, bid)
 
-            # 4. Check if all positions are closed
+            # 5. Check if all positions are closed
             await self._check_all_positions_closed()
 
-            # 5. Phase-specific logic
+            # 6. Phase-specific logic
             if self.state.phase == "AWAITING_SECOND":
                 await self._handle_awaiting_second(ask, bid)
 
@@ -762,6 +766,25 @@ class PairStrategyEngine:
                     print(f"[ERROR] {self.symbol}: Failed to force-close {leg_prefix.upper()} (ticket {ticket})")
 
         await self.save_state()
+
+    async def _check_single_fire_closed(self) -> bool:
+        """
+        Check if the single fire position was closed (TP or SL).
+        If so, nuclear reset all remaining positions and restart.
+        Returns True if reset was triggered (caller should return early).
+        """
+        if self.state.phase != "MONITORING":
+            return False
+        if not self.state.single_fire_executed:
+            return False
+        # single_fire_ticket is cleared to 0 by _check_position_drops when it detects the drop
+        if self.state.single_fire_ticket != 0:
+            return False
+
+        print(f"[SF-CLOSED] {self.symbol}: Single fire closed (TP/SL). Nuclear reset all remaining.")
+        self.activity_log.log_info("Single fire closed - nuclear reset and restart")
+        await self._nuclear_reset_and_restart("SINGLE_FIRE_CLOSED", self.state.realized_pnl)
+        return True
 
     async def _execute_single_fire(self, trigger_price: float, direction: str):
         """Execute the dynamically-determined single fire order."""
