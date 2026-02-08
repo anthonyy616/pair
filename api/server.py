@@ -137,6 +137,12 @@ async def get_current_bot(request: Request):
 async def get_env():
     return { "SUPABASE_URL": SUPABASE_URL, "SUPABASE_KEY": SUPABASE_KEY }
 
+@app.get("/health", status_code=200)
+@app.head("/health", status_code=200)
+async def health_check():
+    """Lightweight health check for VPS monitoring (GET/HEAD)"""
+    return {"status": "ok"}
+
 @app.get("/config")
 async def get_config(bot = Depends(get_current_bot)):
     """Get full multi-asset config"""
@@ -346,8 +352,9 @@ async def get_activity_log_content(filename: str, bot = Depends(get_current_bot)
 # Mount static folder for assets (css/js images)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Serve UI at Root
+# Serve UI at Root (GET/HEAD)
 @app.get("/")
+@app.head("/")
 async def read_index():
     return FileResponse('static/index.html')
 
