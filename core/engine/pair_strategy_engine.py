@@ -340,12 +340,17 @@ class PairStrategyEngine:
             'buy_stop':   mt5.ORDER_TYPE_BUY_STOP,
             'sell_stop':  mt5.ORDER_TYPE_SELL_STOP,
         }
+        
+        symbol_info = mt5.symbol_info(self.symbol)
+        digits = symbol_info.digits if symbol_info else 5
+        rounded_price = round(float(price), digits)
+
         request = {
             'action':       mt5.TRADE_ACTION_PENDING,
             'symbol':       self.symbol,
             'volume':       float(lot),
             'type':         type_map[order_type],
-            'price':        float(price),
+            'price':        rounded_price,
             'magic':        self.MAGIC_NUMBER,
             'comment':      f'{leg_name} bracket',
             'type_time':    mt5.ORDER_TIME_GTC,
@@ -354,7 +359,7 @@ class PairStrategyEngine:
         result = mt5.order_send(request)
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             return result.order
-        print(f'[BRACKET] Failed {order_type} @ {price}: {result.comment if result else "no result"}')
+        print(f'[BRACKET] Failed {order_type} @ {rounded_price}: {result.comment if result else "no result"}')
         return 0
 
     def _cancel_pending_order(self, ticket):
@@ -384,16 +389,16 @@ class PairStrategyEngine:
         F = (ask + bid) / 2
 
         t1 = await self._place_pending_order('sell_limit', F + G,     self.sx_lot, 'Sx')
-        t2 = await self._place_pending_order('buy_stop',   F + G + S, self.by_lot, 'By')
+        t2 = await self._place_pending_order('buy_stop',   F + G - S, self.by_lot, 'By')
         t3 = await self._place_pending_order('buy_limit',  F - G,     self.by_lot, 'By')
-        t4 = await self._place_pending_order('sell_stop',  F - G - S, self.sx_lot, 'Sx')
+        t4 = await self._place_pending_order('sell_stop',  F - G + S, self.sx_lot, 'Sx')
 
         self.state.pending_upside_sell_limit  = t1
         self.state.pending_upside_buy_stop    = t2
         self.state.pending_downside_buy_limit = t3
         self.state.pending_downside_sell_stop = t4
 
-        print(f'[BRACKET] Placed: SL@{F+G:.2f} BS@{F+G+S:.2f} BL@{F-G:.2f} SS@{F-G-S:.2f}')
+        print(f'[BRACKET] Placed: SL@{F+G:.5f} BS@{F+G-S:.5f} BL@{F-G:.5f} SS@{F-G+S:.5f}')
 
     async def _record_fill_from_ticket(self, ticket, leg, direction):
         entry_price = 0.0
@@ -419,13 +424,19 @@ class PairStrategyEngine:
             self.state.by_ticket = actual_ticket
             self.state.by_entry  = entry_price
 
+        lot_size = self.sx_lot if leg == 'Sx' else self.by_lot
+
         self.ticket_map[actual_ticket] = {
             'leg':       leg,
             'direction': direction,
             'entry':     entry_price,
-            'lot':       self.sx_lot if leg == 'Sx' else self.by_lot,
+            'lot':       lot_size,
             'pending':   False,
         }
+
+        self.activity_log.log_info(
+            f"Opened 2nd {direction.capitalize()} ({leg}) @ {entry_price:.5f}  |  Lot: {lot_size:.2f}"
+        )
 
     async def _check_stop_leg_fill(self, pending_tickets):
         if self.state.bracket_winner == 'upside':
@@ -549,20 +560,20 @@ class PairStrategyEngine:
 
         # --- TRADE STOPS LEVEL SAFETY (from SymbolEngine) ---
         symbol_info = mt5.symbol_info(self.symbol)
-        if symbol_info:
+        if symbol_info and (tp > 0 or sl > 0):  # Only apply if TP or SL is actually set
             point = symbol_info.point
             stops_level = max(symbol_info.trade_stops_level, 10) # Min 10 pts safety
             min_dist = stops_level * point
 
             if direction == "buy":
-                if sl > check_price - min_dist:
+                if sl > 0 and sl > check_price - min_dist:
                     sl = check_price - min_dist
-                if tp < check_price + min_dist:
+                if tp > 0 and tp < check_price + min_dist:
                     tp = check_price + min_dist
             else:
-                if sl < check_price + min_dist:
+                if sl > 0 and sl < check_price + min_dist:
                     sl = check_price + min_dist
-                if tp > check_price - min_dist:
+                if tp > 0 and tp > check_price - min_dist:
                     tp = check_price - min_dist
 
         # Snapshot existing tickets BEFORE opening (to find the new one after)

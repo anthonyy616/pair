@@ -1,12 +1,12 @@
 {
     "global": {
-        "max_runtime_minutes": 60,
+        "max_runtime_minutes": 150,
         "max_drawdown_usd": 50.0
     },
     "symbols": {
         "FX Vol 20": {
             "enabled": true,
-            "grid_distance": 20.0,
+            "grid_distance": 30.0,
             "tp_pips": 600.0,
             "sl_pips": 800.0,
             "bx_lot": 0.01,
@@ -19,9 +19,9 @@
             "max_drawdown_usd": 75.0,
             "single_fire_direction": "buy",
             "single_fire_lot": 0.03,
-            "single_fire_tp_pips": 40.0,
-            "single_fire_sl_pips": 40.0,
-            "protection_distance": 40.0
+            "single_fire_tp_pips": 60.0,
+            "single_fire_sl_pips": 60.0,
+            "protection_distance": 60.0
         },
         "FX Vol 40": {
             "enabled": false,
