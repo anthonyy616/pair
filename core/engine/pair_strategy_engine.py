@@ -498,6 +498,14 @@ class PairStrategyEngine:
             self.state.location          = 'DOWN'
             self.state.second_fire_price = self.state.by_entry
 
+        # Calculate actual execution spread for the 2nd fire
+        sx_p = self.state.sx_entry
+        by_p = self.state.by_entry
+        actual_spread = abs(sx_p - by_p)
+        
+        print(f"our_spread = {actual_spread:.5f}")
+        self.activity_log.log_info(f"our_spread = {actual_spread:.5f}")
+
         G   = self.grid_distance * self.pip_size
         P   = self.protection_distance * self.pip_size
         sfp = self.state.second_fire_price
