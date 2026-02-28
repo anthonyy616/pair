@@ -528,14 +528,22 @@ class PairStrategyEngine:
         # Determine price and TP/SL
         if direction == "buy":
             exec_price = tick.ask
-            tp = exec_price + tp_pips_val
-            sl = exec_price - sl_pips_val
+            if leg_name in ['Bx', 'Sx', 'Sy', 'By']:
+                tp = 0
+                sl = 0
+            else:
+                tp = exec_price + tp_pips_val
+                sl = exec_price - sl_pips_val
             order_type = mt5.ORDER_TYPE_BUY
             check_price = tick.bid # For stop level validation
         else:
             exec_price = tick.bid
-            tp = exec_price - tp_pips_val
-            sl = exec_price + sl_pips_val
+            if leg_name in ['Bx', 'Sx', 'Sy', 'By']:
+                tp = 0
+                sl = 0
+            else:
+                tp = exec_price - tp_pips_val
+                sl = exec_price + sl_pips_val
             order_type = mt5.ORDER_TYPE_SELL
             check_price = tick.ask # For stop level validation
 
@@ -685,6 +693,9 @@ class PairStrategyEngine:
             tp_price = info.get("tp", 0)
             sl_price = info.get("sl", 0)
 
+            if tp_price == 0 or sl_price == 0:
+                continue  # Atomic legs have no broker-side TP/SL to track here
+
             flags = self.ticket_touch_flags.get(ticket)
             if flags is None:
                 flags = {"tp_touched": False, "sl_touched": False}
@@ -766,12 +777,17 @@ class PairStrategyEngine:
                 self.activity_log.log_tp_hit(ticket, leg, close_price, realized, "")
             else:
                 self.activity_log.log_sl_hit(ticket, leg, close_price, realized)
-
             # Clear from tracking
             self._clear_ticket_from_state(ticket)
             del self.ticket_map[ticket]
             if ticket in self.ticket_touch_flags:
                 del self.ticket_touch_flags[ticket]
+
+            # Strategic Action: If SingleFire trade closes (TP/SL hit), terminate the bot
+            #if leg == "SingleFire":
+            #    self.activity_log.log_info("Recovery Trade (SingleFire) closed. Terminating bot.")
+            #    await self.terminate()
+            #    return # Exit loop and method after termination
 
             # NOTE: No strategic action on TP/SL - math triggers handle all decisions
 
