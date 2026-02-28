@@ -60,6 +60,14 @@ class StrategyState:
     # PnL tracking
     realized_pnl: float = 0.0
 
+    # Bracket state
+    pending_upside_sell_limit:  int = 0
+    pending_upside_buy_stop:    int = 0
+    pending_downside_buy_limit: int = 0
+    pending_downside_sell_stop: int = 0
+    bracket_winner:             str = ''   # 'upside' or 'downside'
+    second_fire_partial:        bool = False
+
     # Flags
     pairs_complete: bool = False
     single_fire_executed: bool = False
@@ -152,6 +160,10 @@ class PairStrategyEngine:
     def protection_distance(self) -> float:
         return float(self.config.get('protection_distance', 100.0))
 
+    @property
+    def pip_size(self) -> float:
+        return 1.0  # Assuming distances are raw price formats natively
+
     # ========================
     # LIFECYCLE
     # ========================
@@ -198,6 +210,11 @@ class PairStrategyEngine:
                 sy_entry - self.tp_pips, sy_entry + self.sl_pips, sy_ticket
             )
 
+        # After bx_ticket and sy_ticket confirmed, fetch fresh tick:
+        tick = mt5.symbol_info_tick(self.symbol)
+        if tick:
+            await self._place_second_fire_brackets(tick.ask, tick.bid)
+
         # Transition to awaiting second
         self.state.phase = "AWAITING_SECOND"
         self.activity_log.log_phase_transition("FIRST_FIRE", "AWAITING_SECOND")
@@ -233,6 +250,15 @@ class PairStrategyEngine:
         """
         print(f"[TERMINATE] {self.symbol}: Closing ALL positions immediately...")
         self.activity_log.log_info("TERMINATE: Closing all positions...")
+
+        # Cancel all pending bracket orders first
+        self._cancel_bracket('upside')
+        self._cancel_bracket('downside')
+        # Safety net — cancel any remaining magic number pending orders
+        pending = mt5.orders_get(symbol=self.symbol) or []
+        for order in pending:
+            if order.magic == self.MAGIC_NUMBER:
+                self._cancel_pending_order(order.ticket)
 
         # Close all positions
         positions = mt5.positions_get(symbol=self.symbol)
@@ -301,88 +327,182 @@ class PairStrategyEngine:
     # ========================
 
     async def _handle_awaiting_second(self, ask: float, bid: float):
-        """
-        Wait for grid distance to be reached, then fire second atomic pair.
-        Records location (UP/DOWN) of second fire relative to first.
-        """
-        start = self.state.start_price
+        await self._check_bracket_fills(ask, bid)
 
-        # Check if grid distance reached (either direction)
-        triggered_up = ask >= start + self.grid_distance
-        triggered_down = bid <= start - self.grid_distance
+    # ========================
+    # BRACKET EXECUTION
+    # ========================
 
-        if not (triggered_up or triggered_down):
+    async def _place_pending_order(self, order_type, price, lot, leg_name):
+        type_map = {
+            'buy_limit':  mt5.ORDER_TYPE_BUY_LIMIT,
+            'sell_limit': mt5.ORDER_TYPE_SELL_LIMIT,
+            'buy_stop':   mt5.ORDER_TYPE_BUY_STOP,
+            'sell_stop':  mt5.ORDER_TYPE_SELL_STOP,
+        }
+        request = {
+            'action':       mt5.TRADE_ACTION_PENDING,
+            'symbol':       self.symbol,
+            'volume':       float(lot),
+            'type':         type_map[order_type],
+            'price':        float(price),
+            'magic':        self.MAGIC_NUMBER,
+            'comment':      f'{leg_name} bracket',
+            'type_time':    mt5.ORDER_TIME_GTC,
+            'type_filling': mt5.ORDER_FILLING_FOK,
+        }
+        result = mt5.order_send(request)
+        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+            return result.order
+        print(f'[BRACKET] Failed {order_type} @ {price}: {result.comment if result else "no result"}')
+        return 0
+
+    def _cancel_pending_order(self, ticket):
+        if ticket <= 0:
+            return True
+        result = mt5.order_send({
+            'action': mt5.TRADE_ACTION_REMOVE,
+            'order':  ticket,
+        })
+        return result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
+
+    def _cancel_bracket(self, bracket):
+        if bracket == 'upside':
+            self._cancel_pending_order(self.state.pending_upside_sell_limit)
+            self._cancel_pending_order(self.state.pending_upside_buy_stop)
+            self.state.pending_upside_sell_limit = 0
+            self.state.pending_upside_buy_stop   = 0
+        elif bracket == 'downside':
+            self._cancel_pending_order(self.state.pending_downside_buy_limit)
+            self._cancel_pending_order(self.state.pending_downside_sell_stop)
+            self.state.pending_downside_buy_limit = 0
+            self.state.pending_downside_sell_stop = 0
+
+    async def _place_second_fire_brackets(self, ask, bid):
+        S = ask - bid
+        G = self.grid_distance * self.pip_size
+        F = (ask + bid) / 2
+
+        t1 = await self._place_pending_order('sell_limit', F + G,     self.sx_lot, 'Sx')
+        t2 = await self._place_pending_order('buy_stop',   F + G + S, self.by_lot, 'By')
+        t3 = await self._place_pending_order('buy_limit',  F - G,     self.by_lot, 'By')
+        t4 = await self._place_pending_order('sell_stop',  F - G - S, self.sx_lot, 'Sx')
+
+        self.state.pending_upside_sell_limit  = t1
+        self.state.pending_upside_buy_stop    = t2
+        self.state.pending_downside_buy_limit = t3
+        self.state.pending_downside_sell_stop = t4
+
+        print(f'[BRACKET] Placed: SL@{F+G:.2f} BS@{F+G+S:.2f} BL@{F-G:.2f} SS@{F-G-S:.2f}')
+
+    async def _record_fill_from_ticket(self, ticket, leg, direction):
+        entry_price = 0.0
+        actual_ticket = ticket
+        
+        # Retry up to 3 times with small delay if position not found yet
+        for _ in range(3):
+            positions = mt5.positions_get(symbol=self.symbol) or []
+            for pos in positions:
+                if pos.ticket == ticket:
+                    entry_price = pos.price_open
+                    actual_ticket = pos.ticket
+                    break
+            
+            if entry_price > 0:
+                break
+            await asyncio.sleep(0.1) #non-blocking
+
+        if leg == 'Sx':
+            self.state.sx_ticket = actual_ticket
+            self.state.sx_entry  = entry_price
+        elif leg == 'By':
+            self.state.by_ticket = actual_ticket
+            self.state.by_entry  = entry_price
+
+        self.ticket_map[actual_ticket] = {
+            'leg':       leg,
+            'direction': direction,
+            'entry':     entry_price,
+            'lot':       self.sx_lot if leg == 'Sx' else self.by_lot,
+            'pending':   False,
+        }
+
+    async def _check_stop_leg_fill(self, pending_tickets):
+        if self.state.bracket_winner == 'upside':
+            stop_ticket = self.state.pending_upside_buy_stop
+            stop_leg, stop_dir = 'By', 'buy'
+        else:
+            stop_ticket = self.state.pending_downside_sell_stop
+            stop_leg, stop_dir = 'Sx', 'sell'
+
+        if stop_ticket <= 0:
             return
 
-        trigger_price = ask if triggered_up else bid
+        if stop_ticket in pending_tickets:
+            return  # Still pending, check again next tick
 
-        # Record location and reference price of second atomic fire
-        self.state.location = "UP" if triggered_up else "DOWN"
-        self.state.second_fire_price = trigger_price
-        print(f"[LOCATION] {self.symbol}: Second atomic fire location = {self.state.location} @ {trigger_price:.5f}")
-        direction_word = "below" if self.state.location == "DOWN" else "above"
-        self.activity_log.log_info(
-            f"2nd pair opened {direction_word} the 1st pair (at price {trigger_price:.2f})"
-        )
+        # Stop leg filled
+        await self._record_fill_from_ticket(stop_ticket, stop_leg, stop_dir)
+        self.state.second_fire_partial        = False
+        self.state.pending_upside_sell_limit  = 0
+        self.state.pending_upside_buy_stop    = 0
+        self.state.pending_downside_buy_limit = 0
+        self.state.pending_downside_sell_stop = 0
+        await self._complete_second_fire()
 
-        # Calculate math-based trigger prices
-        if self.state.location == "DOWN":
-            self.state.single_fire_trigger_price = trigger_price - 3 * self.grid_distance
-            self.state.protection_trigger_price = trigger_price + self.protection_distance
-            sf_dir = "BUY"
-            print(f"[TRIGGERS] {self.symbol}: SF trigger (BUY) @ bid <= {self.state.single_fire_trigger_price:.5f}, "
-                  f"Protection @ ask >= {self.state.protection_trigger_price:.5f}")
-        else:  # UP
-            self.state.single_fire_trigger_price = trigger_price + 3 * self.grid_distance
-            self.state.protection_trigger_price = trigger_price - self.protection_distance
-            sf_dir = "SELL"
-            print(f"[TRIGGERS] {self.symbol}: SF trigger (SELL) @ ask >= {self.state.single_fire_trigger_price:.5f}, "
-                  f"Protection @ bid <= {self.state.protection_trigger_price:.5f}")
+    async def _check_bracket_fills(self, ask, bid):
+        positions = mt5.positions_get(symbol=self.symbol) or []
+        orders    = mt5.orders_get(symbol=self.symbol) or []
+        pending_tickets = {o.ticket for o in orders}
 
-        self.activity_log.log_info(
-            f"Recovery {sf_dir} will trigger at price {self.state.single_fire_trigger_price:.2f}  |  "
-            f"Protection reset at price {self.state.protection_trigger_price:.2f}"
-        )
+        upside_limit_filled   = (self.state.pending_upside_sell_limit > 0 and
+                                 self.state.pending_upside_sell_limit not in pending_tickets)
+        downside_limit_filled = (self.state.pending_downside_buy_limit > 0 and
+                                 self.state.pending_downside_buy_limit not in pending_tickets)
 
-        # Check if graceful stop is active - skip opening second pair
-        if self.graceful_stop:
-            self.activity_log.log_info(
-                f"Grid distance reached at {trigger_price:.2f} but graceful stop is active — skipping 2nd pair"
-            )
-            # Transition directly to monitoring with just Bx+Sy
-            self.state.pairs_complete = True
-            self.state.phase = "PAIRS_COMPLETE"
-            self.activity_log.log_phase_transition("AWAITING_SECOND", "PAIRS_COMPLETE (partial)")
-            await self.save_state()
-            return
+        if upside_limit_filled and not self.state.bracket_winner:
+            self.state.bracket_winner      = 'upside'
+            self.state.second_fire_partial = True
+            self._cancel_bracket('downside')
+            await self._record_fill_from_ticket(
+                self.state.pending_upside_sell_limit, 'Sx', 'sell')
+            print('[BRACKET] Upside sell limit filled → Sx active, waiting for By stop')
 
-        self.activity_log.log_second_fire(self.state.cycle_count, trigger_price)
+        elif downside_limit_filled and not self.state.bracket_winner:
+            self.state.bracket_winner      = 'downside'
+            self.state.second_fire_partial = True
+            self._cancel_bracket('upside')
+            await self._record_fill_from_ticket(
+                self.state.pending_downside_buy_limit, 'By', 'buy')
+            print('[BRACKET] Downside buy limit filled → By active, waiting for Sx stop')
 
-        # Second atomic fire: Sx + By
-        sx_ticket, sx_entry = await self._execute_market_order("sell", self.sx_lot, "Sx")
-        by_ticket, by_entry = await self._execute_market_order("buy", self.by_lot, "By")
+        if self.state.second_fire_partial:
+            await self._check_stop_leg_fill(pending_tickets)
 
-        if sx_ticket:
-            self.state.sx_ticket = sx_ticket
-            self.state.sx_entry = sx_entry
-            self.activity_log.log_fire(
-                self.state.cycle_count, "Sx", sx_entry, self.sx_lot,
-                sx_entry - self.tp_pips, sx_entry + self.sl_pips, sx_ticket
-            )
+    async def _complete_second_fire(self):
+        if self.state.bracket_winner == 'upside':
+            self.state.location          = 'UP'
+            self.state.second_fire_price = self.state.sx_entry
+        else:
+            self.state.location          = 'DOWN'
+            self.state.second_fire_price = self.state.by_entry
 
-        if by_ticket:
-            self.state.by_ticket = by_ticket
-            self.state.by_entry = by_entry
-            self.activity_log.log_fire(
-                self.state.cycle_count, "By", by_entry, self.by_lot,
-                by_entry + self.tp_pips, by_entry - self.sl_pips, by_ticket
-            )
+        G   = self.grid_distance * self.pip_size
+        P   = self.protection_distance * self.pip_size
+        sfp = self.state.second_fire_price
 
-        # Both pairs now complete
+        if self.state.location == 'DOWN':
+            self.state.single_fire_trigger_price = sfp - 3 * G
+            self.state.protection_trigger_price  = sfp + P
+        else:
+            self.state.single_fire_trigger_price = sfp + 3 * G
+            self.state.protection_trigger_price  = sfp - P
+
         self.state.pairs_complete = True
-        self.state.phase = "PAIRS_COMPLETE"
-        self.activity_log.log_phase_transition("AWAITING_SECOND", "PAIRS_COMPLETE")
-
+        self.state.phase          = 'PAIRS_COMPLETE'
+        print(f'[SECOND-FIRE] Complete. Location={self.state.location} '
+              f'SF trigger={self.state.single_fire_trigger_price:.2f} '
+              f'Protection={self.state.protection_trigger_price:.2f}')
         await self.save_state()
 
     # ========================
@@ -558,6 +678,8 @@ class PairStrategyEngine:
         for ticket, info in list(self.ticket_map.items()):
             if not info:
                 continue
+            if info.get('pending', False):
+                continue  # Pending order ticket, skip touch flags
 
             direction = info.get("direction", "")
             tp_price = info.get("tp", 0)
@@ -602,6 +724,8 @@ class PairStrategyEngine:
             info = self.ticket_map.get(ticket)
             if not info:
                 continue
+            if info.get('pending', False):
+                continue  # Pending order ticket, not a live position drop
 
             leg = info.get("leg", "")
             direction = info.get("direction", "")
@@ -958,6 +1082,15 @@ class PairStrategyEngine:
 
         self.state.phase = "RESETTING"
         self.activity_log.log_phase_transition("*", "RESETTING")
+
+        # Cancel all pending bracket orders first
+        self._cancel_bracket('upside')
+        self._cancel_bracket('downside')
+        # Safety net — cancel any remaining magic number pending orders
+        pending = mt5.orders_get(symbol=self.symbol) or []
+        for order in pending:
+            if order.magic == self.MAGIC_NUMBER:
+                self._cancel_pending_order(order.ticket)
 
         # Close ALL remaining positions for this symbol
         positions = mt5.positions_get(symbol=self.symbol)
